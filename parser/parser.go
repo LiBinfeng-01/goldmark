@@ -925,47 +925,80 @@ func (p *parser) NextBlock(reader text.Reader, opts ...ParseOption) Block {
 		c.Context = NewContext()
 	}
 	pc := c.Context
-	// Skip blank lines
+
+	// Get current opened blocks
+	openedBlocks := pc.OpenedBlocks()
+	if len(openedBlocks) > 0 {
+		// If we have opened blocks, try to continue with the last one
+		lastBlock := openedBlocks[len(openedBlocks)-1]
+		line, _ := reader.PeekLine()
+		if line == nil {
+			// End of input, close the block
+			lastBlock.Parser.Close(lastBlock.Node, reader, pc)
+			pc.SetOpenedBlocks(openedBlocks[:len(openedBlocks)-1])
+			return lastBlock
+		}
+
+		// Check if we can open a new block at the same level
+		var parent ast.Node
+		if len(openedBlocks) > 1 {
+			parent = openedBlocks[len(openedBlocks)-2].Node
+		} else {
+			parent = ast.NewDocument()
+		}
+
+		// Try to open a new block at the same level
+		result := p.openBlocks(parent, false, reader, pc)
+		if result == newBlocksOpened {
+			// New block opened at the same level, close the current block
+			lastBlock.Parser.Close(lastBlock.Node, reader, pc)
+			pc.SetOpenedBlocks(openedBlocks[:len(openedBlocks)-1])
+			newBlocks := pc.OpenedBlocks()
+			return newBlocks[len(newBlocks)-1]
+		}
+
+		// Try to continue the current block
+		state := lastBlock.Parser.Continue(lastBlock.Node, reader, pc)
+		if state&Continue != 0 {
+			// Block can continue
+			if state&HasChildren != 0 {
+				// Block can have children, try to open a new child block
+				result := p.openBlocks(lastBlock.Node, false, reader, pc)
+				if result == newBlocksOpened {
+					// New child block opened
+					newBlocks := pc.OpenedBlocks()
+					return newBlocks[len(newBlocks)-1]
+				}
+			}
+			// No new child block, return the current block
+			return lastBlock
+		}
+
+		// Block cannot continue, close it
+		lastBlock.Parser.Close(lastBlock.Node, reader, pc)
+		pc.SetOpenedBlocks(openedBlocks[:len(openedBlocks)-1])
+		return lastBlock
+	}
+
+	// No opened blocks, try to open a new one
 	_, _, ok := reader.SkipBlankLines()
 	if !ok {
 		return Block{} // No more blocks
 	}
 
-	// Try to open a block at the current position
+	// Try to open a new block
 	var parent ast.Node = ast.NewDocument() // Temporary parent
 	result := p.openBlocks(parent, true, reader, pc)
 	if result != newBlocksOpened {
 		return Block{} // No block opened
 	}
 
-	// Get the last opened block (the one just parsed)
-	openedBlocks := pc.OpenedBlocks()
-	if len(openedBlocks) == 0 {
+	// Get the newly opened block
+	newBlocks := pc.OpenedBlocks()
+	if len(newBlocks) == 0 {
 		return Block{}
 	}
-	block := openedBlocks[len(openedBlocks)-1]
-
-	// Now, continue parsing this block until it is closed
-	for {
-		line, _ := reader.PeekLine()
-		if line == nil {
-			block.Parser.Close(block.Node, reader, pc)
-			break
-		}
-		state := block.Parser.Continue(block.Node, reader, pc)
-		if state&Continue == 0 {
-			block.Parser.Close(block.Node, reader, pc)
-			break
-		}
-	}
-
-	// Remove the block from the context's opened blocks
-	openedBlocks = pc.OpenedBlocks()
-	if len(openedBlocks) > 0 {
-		pc.SetOpenedBlocks(openedBlocks[:len(openedBlocks)-1])
-	}
-
-	return block
+	return newBlocks[len(newBlocks)-1]
 }
 
 func (p *parser) transformParagraph(node *ast.Paragraph, reader text.Reader, pc Context) bool {
@@ -1327,54 +1360,4 @@ func (p *parser) parseBlock(block text.BlockReader, parent ast.Node, pc Context)
 		ip.CloseBlock(parent, block, pc)
 	}
 
-}
-
-// NextChunkResult holds the result of a NextChunk call.
-type NextChunkResult struct {
-	Root   ast.Node   // The root of the AST tree (usually ast.Document)
-	Parent ast.Node   // The current parent node for the next block
-	Block  Block      // The block just parsed (nil Node if no more blocks)
-	Stack  []ast.Node // The parent stack (for nested blocks)
-	Ctx    Context    // The parser context (must be persisted between calls)
-}
-
-// NextChunk incrementally parses the next block and attaches it to the AST, maintaining parent/stack/context.
-// Usage: persist root, parent, stack, ctx between calls for correct incremental parsing.
-func (p *parser) NextChunk(reader text.Reader, root ast.Node, parent ast.Node, stack []ast.Node, ctx Context, opts ...ParseOption) NextChunkResult {
-	if root == nil {
-		root = ast.NewDocument()
-		parent = root
-		stack = []ast.Node{root}
-	}
-	if ctx == nil {
-		ctx = NewContext()
-	}
-
-	block := p.NextBlock(reader, WithContext(ctx))
-	if block.Node == nil {
-		return NextChunkResult{Root: root, Parent: parent, Block: block, Stack: stack, Ctx: ctx}
-	}
-
-	// Attach the block to the current parent
-	parent.AppendChild(parent, block.Node)
-
-	// If the block is a container (can have children), push to stack and update parent
-	if block.Node.HasChildren() {
-		stack = append(stack, block.Node)
-		parent = block.Node
-	} else {
-		// If the block closes the current parent, pop from stack
-		for len(stack) > 1 && !parent.HasChildren() {
-			stack = stack[:len(stack)-1]
-			parent = stack[len(stack)-1]
-		}
-	}
-
-	return NextChunkResult{
-		Root:   root,
-		Parent: parent,
-		Block:  block,
-		Stack:  stack,
-		Ctx:    ctx,
-	}
 }
