@@ -11,12 +11,15 @@ import (
 
 func TestMarkdownLexerDebug(t *testing.T) {
 	markdownContent := `# Heading 1
-
+## Heading 2
 This is a paragraph with **bold** and *italic* text.
+
+### Heading 3
 
 - List item 1
 - List item 2
 
+## Heading 4
 > Blockquote
 
 ~~~go

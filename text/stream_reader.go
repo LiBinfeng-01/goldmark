@@ -55,7 +55,9 @@ func (r *streamReader) Peek() byte {
 }
 
 func (r *streamReader) PeekLine() ([]byte, Segment) {
-	r.peekedLine = <-r.buffer
+	if r.peekedLine == nil {
+		r.peekedLine = <-r.buffer
+	}
 	return r.peekedLine, r.pos
 }
 
@@ -151,7 +153,7 @@ func (r *streamReader) AdvanceToEOL() {
 
 func (r *streamReader) AdvanceLine() {
 	r.lineOffset = -1
-	r.peekedLine = nil
+	r.peekedLine = <-r.buffer
 	r.line++
 	r.head = 0
 	r.pos.Padding = 0

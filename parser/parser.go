@@ -643,6 +643,7 @@ type parser struct {
 	escapedSpace          bool
 	config                *Config
 	initSync              sync.Once
+	parent                ast.Node
 }
 
 type withBlockParsers struct {
@@ -738,6 +739,7 @@ func NewParser(options ...Option) Parser {
 	p := &parser{
 		options: map[OptionName]interface{}{},
 		config:  config,
+		parent:  ast.NewDocument(),
 	}
 
 	return p
@@ -926,79 +928,73 @@ func (p *parser) NextBlock(reader text.Reader, opts ...ParseOption) Block {
 	}
 	pc := c.Context
 
-	// Get current opened blocks
-	openedBlocks := pc.OpenedBlocks()
-	if len(openedBlocks) > 0 {
-		// If we have opened blocks, try to continue with the last one
-		lastBlock := openedBlocks[len(openedBlocks)-1]
-		line, _ := reader.PeekLine()
-		if line == nil {
-			// End of input, close the block
-			lastBlock.Parser.Close(lastBlock.Node, reader, pc)
-			pc.SetOpenedBlocks(openedBlocks[:len(openedBlocks)-1])
-			return lastBlock
+	blankLines := make([]lineStat, 0, 128)
+	for { // process blocks separated by blank lines
+		_, _, ok := reader.SkipBlankLines()
+		if !ok {
+			return Block{}
 		}
-
-		// Check if we can open a new block at the same level
-		var parent ast.Node
-		if len(openedBlocks) > 1 {
-			parent = openedBlocks[len(openedBlocks)-2].Node
-		} else {
-			parent = ast.NewDocument()
+		// first, we try to open blocks
+		if p.openBlocks(p.parent, true, reader, pc) != newBlocksOpened {
+			return Block{}
 		}
-
-		// Try to open a new block at the same level
-		result := p.openBlocks(parent, false, reader, pc)
-		if result == newBlocksOpened {
-			// New block opened at the same level, close the current block
-			lastBlock.Parser.Close(lastBlock.Node, reader, pc)
-			pc.SetOpenedBlocks(openedBlocks[:len(openedBlocks)-1])
-			newBlocks := pc.OpenedBlocks()
-			return newBlocks[len(newBlocks)-1]
-		}
-
-		// Try to continue the current block
-		state := lastBlock.Parser.Continue(lastBlock.Node, reader, pc)
-		if state&Continue != 0 {
-			// Block can continue
-			if state&HasChildren != 0 {
-				// Block can have children, try to open a new child block
-				result := p.openBlocks(lastBlock.Node, false, reader, pc)
-				if result == newBlocksOpened {
-					// New child block opened
-					newBlocks := pc.OpenedBlocks()
-					return newBlocks[len(newBlocks)-1]
-				}
+		reader.AdvanceLine()
+		blankLines = blankLines[0:0]
+		for { // process opened blocks line by line
+			openedBlocks := pc.OpenedBlocks()
+			l := len(openedBlocks)
+			if l == 0 {
+				break
 			}
-			// No new child block, return the current block
-			return lastBlock
+			lastIndex := l - 1
+			for i := 0; i < l; i++ {
+				be := openedBlocks[i]
+				line, _ := reader.PeekLine()
+				if line == nil {
+					p.closeBlocks(lastIndex, 0, reader, pc)
+					reader.AdvanceLine()
+					return Block{}
+				}
+				lineNum, _ := reader.Position()
+				blankLines = append(blankLines, lineStat{lineNum, i, util.IsBlank(line)})
+				// If node is a paragraph, p.openBlocks determines whether it is continuable.
+				// So we do not process paragraphs here.
+				if !ast.IsParagraph(be.Node) {
+					state := be.Parser.Continue(be.Node, reader, pc)
+					if state&Continue != 0 {
+						// When current node is a container block and has no children,
+						// we try to open new child nodes
+						if state&HasChildren != 0 && i == lastIndex {
+							isBlank := isBlankLine(lineNum-1, i+1, blankLines)
+							p.openBlocks(be.Node, isBlank, reader, pc)
+							break
+						}
+						continue
+					}
+				}
+				// current node may be closed or lazy continuation
+				isBlank := isBlankLine(lineNum-1, i, blankLines)
+				thisParent := p.parent
+				if i != 0 {
+					thisParent = openedBlocks[i-1].Node
+				}
+				lastNode := openedBlocks[lastIndex].Node
+				result := p.openBlocks(thisParent, isBlank, reader, pc)
+				if result != paragraphContinuation {
+					// lastNode is a paragraph and was transformed by the paragraph
+					// transformers.
+					if openedBlocks[lastIndex].Node != lastNode {
+						lastIndex--
+					}
+					p.closeBlocks(lastIndex, i, reader, pc)
+					return openedBlocks[lastIndex]
+				}
+				break
+			}
+
+			reader.AdvanceLine()
 		}
-
-		// Block cannot continue, close it
-		lastBlock.Parser.Close(lastBlock.Node, reader, pc)
-		pc.SetOpenedBlocks(openedBlocks[:len(openedBlocks)-1])
-		return lastBlock
 	}
-
-	// No opened blocks, try to open a new one
-	_, _, ok := reader.SkipBlankLines()
-	if !ok {
-		return Block{} // No more blocks
-	}
-
-	// Try to open a new block
-	var parent ast.Node = ast.NewDocument() // Temporary parent
-	result := p.openBlocks(parent, true, reader, pc)
-	if result != newBlocksOpened {
-		return Block{} // No block opened
-	}
-
-	// Get the newly opened block
-	newBlocks := pc.OpenedBlocks()
-	if len(newBlocks) == 0 {
-		return Block{}
-	}
-	return newBlocks[len(newBlocks)-1]
 }
 
 func (p *parser) transformParagraph(node *ast.Paragraph, reader text.Reader, pc Context) bool {
@@ -1021,6 +1017,8 @@ func (p *parser) closeBlocks(from, to int, reader text.Reader, pc Context) {
 		}
 		if node.Parent() != nil { // closes only if node has not been transformed
 			blocks[i].Parser.Close(blocks[i].Node, reader, pc)
+			fmt.Printf("=====close====")
+			blocks[i].Node.Dump(reader.Source(), 3)
 		}
 	}
 	if from == len(blocks)-1 {
@@ -1115,9 +1113,15 @@ retry:
 				lastPos := len(pc.OpenedBlocks()) - 1
 				p.closeBlocks(lastPos, lastPos, reader, pc)
 			}
+			//if parent.LastChild() != nil && last != nil {
+			//	lastPos := len(pc.OpenedBlocks()) - 1
+			//	p.closeBlocks(lastPos, lastPos, reader, pc)
+			//}
 			parent.AppendChild(parent, node)
 			result = newBlocksOpened
 			be := Block{node, bp}
+			fmt.Printf("=====open=====\n")
+			be.Node.Dump(reader.Source(), 3)
 			pc.SetOpenedBlocks(append(pc.OpenedBlocks(), be))
 			if state&HasChildren != 0 {
 				parent = node
