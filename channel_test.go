@@ -3,9 +3,6 @@ package goldmark_test
 import (
 	"bufio"
 	"fmt"
-	. "github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/extension"
-	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
 	"io"
 	"os"
@@ -54,24 +51,38 @@ func TestChannelDebug(t *testing.T) {
 
 	reader := text.NewStreamReader(dataChan)
 
-	markdown := New(
-		WithExtensions(
-			extension.Table,
-			extension.GFM,
-		),
-	)
-	ctx := parser.NewContext()
+	//markdown := New(
+	//	WithExtensions(
+	//		extension.Table,
+	//		extension.GFM,
+	//	),
+	//)
+	//ctx := parser.NewContext()
+
+	sizeLimit := 20
+	buffer := make([]byte, 0)
+	size := 0
+
 	for { // 通道关闭后自动退出循环
-		//line, _ := reader.PeekLine()
-		//reader.AdvanceLine()
-		//if len(line) == 0 {
-		//	break
-		//}
-		//fmt.Printf("消费者读取: %s\n", line)
+		line, _ := reader.PeekLine()
+		reader.AdvanceLine()
+		if len(line) == 0 {
+			break
+		}
+		if (size + len(line)) > sizeLimit {
+			fmt.Printf("------------buffer--------------\n%s\n", buffer)
+			buffer = make([]byte, 0)
+			buffer = append(buffer, line...)
+			size = len(line)
+		} else {
+			buffer = append(buffer, line...)
+			size += len(line)
+		}
+		//fmt.Printf("消费者读取: %s with size %d\n", line, len(line))
 		// 显式释放大对象内存（可选）
 		//data = nil // 加速GC回收
-		block := markdown.Parser().NextBlock(reader, parser.WithContext(ctx))
-		t.Logf("Node kind: %s", block.Node.Kind())
+		//block := markdown.Parser().NextBlock(reader, parser.WithContext(ctx))
+		//t.Logf("Node kind: %s", block.Node.Kind())
 	}
 
 	fmt.Println("任务完成")

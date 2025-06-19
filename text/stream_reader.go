@@ -1,7 +1,6 @@
 package text
 
 import (
-	"bytes"
 	"regexp"
 	"unicode/utf8"
 
@@ -10,6 +9,7 @@ import (
 
 type streamReader struct {
 	buffer       chan []byte
+	source       []byte
 	sourceLength int
 	line         int
 	peekedLine   []byte
@@ -40,25 +40,31 @@ func (r *streamReader) ResetPosition() {
 }
 
 func (r *streamReader) Source() []byte {
-	return r.peekedLine
+	return r.source
 }
 
 func (r *streamReader) Value(seg Segment) []byte {
-	return seg.Value(r.peekedLine)
+	return seg.Value(r.source)
 }
 
 func (r *streamReader) Peek() byte {
-	if r.pos.Padding != 0 {
-		return space[0]
+	if r.pos.Start >= 0 && r.pos.Start < r.sourceLength {
+		if r.pos.Padding != 0 {
+			return space[0]
+		}
+		return r.source[r.pos.Start]
 	}
-	return r.peekedLine[r.pos.Start]
+	return EOF
 }
 
 func (r *streamReader) PeekLine() ([]byte, Segment) {
-	if r.peekedLine == nil {
-		r.peekedLine = <-r.buffer
+	if r.pos.Start >= 0 && r.pos.Start < r.sourceLength {
+		if r.peekedLine == nil {
+			r.peekedLine = r.pos.Value(r.Source())
+		}
+		return r.peekedLine, r.pos
 	}
-	return r.peekedLine, r.pos
+	return nil, r.pos
 }
 
 func (r *streamReader) ReadRune() (rune, int, error) {
@@ -101,17 +107,15 @@ func (r *streamReader) Advance(n int) {
 	r.lineOffset = -1
 	if n < len(r.peekedLine) && r.pos.Padding == 0 {
 		r.pos.Start += n
-		r.peekedLine = nil
 		return
 	}
-	r.peekedLine = nil
 	l := r.sourceLength
 	for ; n > 0 && r.pos.Start < l; n-- {
 		if r.pos.Padding != 0 {
 			r.pos.Padding--
 			continue
 		}
-		if r.peekedLine[r.pos.Start] == '\n' {
+		if r.source[r.pos.Start] == '\n' {
 			r.AdvanceLine()
 			continue
 		}
@@ -132,31 +136,21 @@ func (r *streamReader) AdvanceToEOL() {
 	}
 
 	r.lineOffset = -1
-	i := -1
-	if r.peekedLine != nil {
-		r.pos.Start += len(r.peekedLine) - r.pos.Padding - 1
-		if r.peekedLine[r.pos.Start] == '\n' {
-			i = 0
-		}
-	}
-	if i == -1 {
-		i = bytes.IndexByte(r.peekedLine[r.pos.Start:], '\n')
-	}
-	r.peekedLine = nil
-	if i != -1 {
-		r.pos.Start += i
-	} else {
-		r.pos.Start = r.sourceLength
-	}
+	r.pos.Start = r.sourceLength
 	r.pos.Padding = 0
 }
 
 func (r *streamReader) AdvanceLine() {
 	r.lineOffset = -1
 	r.peekedLine = <-r.buffer
+	//fmt.Printf("消费者读取: %s with size %d\n", r.peekedLine, len(r.peekedLine))
 	r.line++
 	r.head = 0
 	r.pos.Padding = 0
+	r.pos.Start = 0
+	r.pos.Stop = len(r.peekedLine)
+	r.source = r.peekedLine
+	r.sourceLength = len(r.peekedLine)
 }
 
 func (r *streamReader) Position() (int, Segment) {

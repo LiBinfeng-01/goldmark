@@ -3,6 +3,7 @@ package parser
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -117,6 +118,28 @@ func (s *ids) Put(value []byte) {
 	s.values[util.BytesToReadOnlyString(value)] = true
 }
 
+type seqIds struct {
+	values map[string]bool
+	id     int
+}
+
+func newSeqIDs() IDs {
+	initId := 2
+	return &seqIds{
+		values: map[string]bool{},
+		id:     initId,
+	}
+}
+
+func (s *seqIds) Generate(value []byte, kind ast.NodeKind) []byte {
+	newId := s.id
+	s.id++
+	return []byte(strconv.Itoa(newId))
+}
+
+func (s *seqIds) Put(value []byte) {
+}
+
 // ContextKey is a key that is used to set arbitrary values to the context.
 type ContextKey int
 
@@ -202,6 +225,14 @@ type Context interface {
 
 	// IsInLinkLabel returns true if current position seems to be in link label.
 	IsInLinkLabel() bool
+
+	Relation() map[int]int
+
+	Node2Id() map[ast.Node]int
+
+	Node2Position() map[ast.Node]int
+
+	Level2Node() map[int]ast.Node
 }
 
 // A ContextConfig struct is a data structure that holds configuration of the Context.
@@ -228,12 +259,17 @@ type parseContext struct {
 	delimiters    *Delimiter
 	lastDelimiter *Delimiter
 	openedBlocks  []Block
+	idsToBlock    map[int]Block
+	relation      map[int]int
+	node2Id       map[ast.Node]int
+	node2Position map[ast.Node]int
+	level2Node    map[int]ast.Node
 }
 
 // NewContext returns a new Context.
 func NewContext(options ...ContextOption) Context {
 	cfg := &ContextConfig{
-		IDs: newIDs(),
+		IDs: newSeqIDs(),
 	}
 	for _, option := range options {
 		option(cfg)
@@ -248,7 +284,28 @@ func NewContext(options ...ContextOption) Context {
 		delimiters:    nil,
 		lastDelimiter: nil,
 		openedBlocks:  []Block{},
+		idsToBlock:    make(map[int]Block),
+		relation:      make(map[int]int),
+		node2Id:       make(map[ast.Node]int),
+		node2Position: make(map[ast.Node]int),
+		level2Node:    make(map[int]ast.Node),
 	}
+}
+
+func (p *parseContext) Relation() map[int]int {
+	return p.relation
+}
+
+func (p *parseContext) Node2Id() map[ast.Node]int {
+	return p.node2Id
+}
+
+func (p *parseContext) Node2Position() map[ast.Node]int {
+	return p.node2Position
+}
+
+func (p *parseContext) Level2Node() map[int]ast.Node {
+	return p.level2Node
 }
 
 func (p *parseContext) Get(key ContextKey) interface{} {
@@ -630,6 +687,7 @@ type Block struct {
 	Node ast.Node
 	// Parser is a BlockParser.
 	Parser BlockParser
+	Id     int
 }
 
 type parser struct {
@@ -878,15 +936,17 @@ func (p *parser) Parse(reader text.Reader, opts ...ParseOption) ast.Node {
 	}
 	pc := c.Context
 	root := ast.NewDocument()
+	pc.Node2Id()[root] = 1
+	pc.Level2Node()[0] = root
 	p.parseBlocks(root, reader, pc)
 
-	blockReader := text.NewBlockReader(reader.Source(), nil)
-	p.walkBlock(root, func(node ast.Node) {
-		p.parseBlock(blockReader, node, pc)
-	})
-	for _, at := range p.astTransformers {
-		at.Transform(root, reader, pc)
-	}
+	//blockReader := text.NewBlockReader(reader.Source(), nil)
+	//p.walkBlock(root, func(node ast.Node) {
+	//	p.parseBlock(blockReader, node, pc)
+	//})
+	//for _, at := range p.astTransformers {
+	//	at.Transform(root, reader, pc)
+	//}
 
 	// root.Dump(reader.Source(), 0)
 	return root
@@ -1016,9 +1076,9 @@ func (p *parser) closeBlocks(from, to int, reader text.Reader, pc Context) {
 			p.transformParagraph(paragraph, reader, pc)
 		}
 		if node.Parent() != nil { // closes only if node has not been transformed
+			//fmt.Printf("=====close=====id:%d with parent %d\n", blocks[i].Id, pc.Node2Id()[blocks[i].Node])
 			blocks[i].Parser.Close(blocks[i].Node, reader, pc)
-			fmt.Printf("=====close====")
-			blocks[i].Node.Dump(reader.Source(), 3)
+			//blocks[i].Node.Dump(reader.Source(), 1)
 		}
 	}
 	if from == len(blocks)-1 {
@@ -1113,15 +1173,26 @@ retry:
 				lastPos := len(pc.OpenedBlocks()) - 1
 				p.closeBlocks(lastPos, lastPos, reader, pc)
 			}
-			//if parent.LastChild() != nil && last != nil {
-			//	lastPos := len(pc.OpenedBlocks()) - 1
-			//	p.closeBlocks(lastPos, lastPos, reader, pc)
-			//}
+			if ast.IsHeading(node) {
+				level := ast.HeadingLevel(node)
+				pc.Level2Node()[level] = node
+				parent = pc.Level2Node()[level-1]
+			}
+			if parent.LastChild() != nil && last != nil {
+				lastPos := len(pc.OpenedBlocks()) - 1
+				lastChildPos := pc.Node2Position()[parent.LastChild()]
+				p.closeBlocks(lastPos, lastChildPos, reader, pc)
+			}
 			parent.AppendChild(parent, node)
 			result = newBlocksOpened
-			be := Block{node, bp}
-			fmt.Printf("=====open=====\n")
-			be.Node.Dump(reader.Source(), 3)
+			id, _ := strconv.Atoi(string(pc.IDs().Generate(line, node.Kind())))
+			be := Block{node, bp, id}
+			pc.Node2Id()[node] = id
+			pc.Relation()[id] = pc.Node2Id()[parent]
+			//resultId := binary.BigEndian.Uint64(id)
+			fmt.Printf("=====open=====id:%d with parent %d\n", be.Id, pc.Node2Id()[parent])
+			//be.Node.Dump(reader.Source(), 3)
+			pc.Node2Position()[node] = len(pc.OpenedBlocks())
 			pc.SetOpenedBlocks(append(pc.OpenedBlocks(), be))
 			if state&HasChildren != 0 {
 				parent = node
@@ -1223,7 +1294,7 @@ func (p *parser) parseBlocks(parent ast.Node, reader text.Reader, pc Context) {
 					if openedBlocks[lastIndex].Node != lastNode {
 						lastIndex--
 					}
-					p.closeBlocks(lastIndex, i, reader, pc)
+					//p.closeBlocks(lastIndex, i, reader, pc)
 				}
 				break
 			}

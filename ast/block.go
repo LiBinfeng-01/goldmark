@@ -188,6 +188,17 @@ type Heading struct {
 	Level int
 }
 
+// IsHeading returns true if the given node implements the Paragraph interface,
+// otherwise false.
+func IsHeading(node Node) bool {
+	_, ok := node.(*Heading)
+	return ok
+}
+
+func HeadingLevel(node Node) int {
+	return node.(*Heading).Level
+}
+
 // Dump implements Node.Dump .
 func (n *Heading) Dump(source []byte, level int) {
 	m := map[string]string{

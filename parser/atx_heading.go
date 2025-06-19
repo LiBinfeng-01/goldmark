@@ -165,7 +165,7 @@ func (b *atxHeadingParser) Open(parent ast.Node, reader text.Reader, pc Context)
 }
 
 func (b *atxHeadingParser) Continue(node ast.Node, reader text.Reader, pc Context) State {
-	return Close
+	return Continue | HasChildren
 }
 
 func (b *atxHeadingParser) Close(node ast.Node, reader text.Reader, pc Context) {
