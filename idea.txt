@@ -1,0 +1,3 @@
+open的时候从chan里面将数据拿出来
+close的时候可以释放对应的index range下的内存
+但是open和close可能会隔着一段时间，因为需要根据树的遍历方式去进行open和close，所以从chan里面拿出来不能马上释放掉，但是可以按照下标释放？

@@ -233,6 +233,8 @@ type Context interface {
 	Node2Position() map[ast.Node]int
 
 	Level2Node() map[int]ast.Node
+
+	Root() Block
 }
 
 // A ContextConfig struct is a data structure that holds configuration of the Context.
@@ -264,10 +266,11 @@ type parseContext struct {
 	node2Id       map[ast.Node]int
 	node2Position map[ast.Node]int
 	level2Node    map[int]ast.Node
+	root          Block
 }
 
 // NewContext returns a new Context.
-func NewContext(options ...ContextOption) Context {
+func NewContext(root Block, options ...ContextOption) Context {
 	cfg := &ContextConfig{
 		IDs: newSeqIDs(),
 	}
@@ -289,7 +292,12 @@ func NewContext(options ...ContextOption) Context {
 		node2Id:       make(map[ast.Node]int),
 		node2Position: make(map[ast.Node]int),
 		level2Node:    make(map[int]ast.Node),
+		root:          root,
 	}
+}
+
+func (p *parseContext) Root() Block {
+	return p.root
 }
 
 func (p *parseContext) Relation() map[int]int {
@@ -932,12 +940,10 @@ func (p *parser) Parse(reader text.Reader, opts ...ParseOption) ast.Node {
 		opt(c)
 	}
 	if c.Context == nil {
-		c.Context = NewContext()
+		c.Context = NewContext(Block{})
 	}
 	pc := c.Context
-	root := ast.NewDocument()
-	pc.Node2Id()[root] = 1
-	pc.Level2Node()[0] = root
+	root := pc.Root().Node
 	p.parseBlocks(root, reader, pc)
 
 	//blockReader := text.NewBlockReader(reader.Source(), nil)
@@ -984,7 +990,7 @@ func (p *parser) NextBlock(reader text.Reader, opts ...ParseOption) Block {
 		opt(c)
 	}
 	if c.Context == nil {
-		c.Context = NewContext()
+		c.Context = NewContext(Block{})
 	}
 	pc := c.Context
 
@@ -1190,7 +1196,7 @@ retry:
 			pc.Node2Id()[node] = id
 			pc.Relation()[id] = pc.Node2Id()[parent]
 			//resultId := binary.BigEndian.Uint64(id)
-			fmt.Printf("=====open=====id:%d with parent %d\n", be.Id, pc.Node2Id()[parent])
+			//fmt.Printf("=====open=====\nid:%d with parent %d\n", be.Id, pc.Node2Id()[parent])
 			//be.Node.Dump(reader.Source(), 3)
 			pc.Node2Position()[node] = len(pc.OpenedBlocks())
 			pc.SetOpenedBlocks(append(pc.OpenedBlocks(), be))
@@ -1235,72 +1241,69 @@ func isBlankLine(lineNum, level int, stats []lineStat) bool {
 }
 
 func (p *parser) parseBlocks(parent ast.Node, reader text.Reader, pc Context) {
-	pc.SetOpenedBlocks(nil)
 	blankLines := make([]lineStat, 0, 128)
-	for { // process blocks separated by blank lines
-		_, _, ok := reader.SkipBlankLines()
-		if !ok {
-			return
+	_, _, ok := reader.SkipBlankLines()
+	if !ok {
+		return
+	}
+	// first, we try to open blocks
+	if p.openBlocks(parent, true, reader, pc) != newBlocksOpened {
+		return
+	}
+	reader.AdvanceLine()
+	blankLines = blankLines[0:0]
+	for { // process opened blocks line by line
+		openedBlocks := pc.OpenedBlocks()
+		l := len(openedBlocks)
+		if l == 0 {
+			break
 		}
-		// first, we try to open blocks
-		if p.openBlocks(parent, true, reader, pc) != newBlocksOpened {
-			return
+		lastIndex := l - 1
+		for i := 0; i < l; i++ {
+			be := openedBlocks[i]
+			line, _ := reader.PeekLine()
+			if line == nil {
+				p.closeBlocks(lastIndex, 0, reader, pc)
+				reader.AdvanceLine()
+				return
+			}
+			lineNum, _ := reader.Position()
+			blankLines = append(blankLines, lineStat{lineNum, i, util.IsBlank(line)})
+			// If node is a paragraph, p.openBlocks determines whether it is continuable.
+			// So we do not process paragraphs here.
+			if !ast.IsParagraph(be.Node) {
+				state := be.Parser.Continue(be.Node, reader, pc)
+				if state&Continue != 0 {
+					// When current node is a container block and has no children,
+					// we try to open new child nodes
+					if state&HasChildren != 0 && i == lastIndex {
+						isBlank := isBlankLine(lineNum-1, i+1, blankLines)
+						p.openBlocks(be.Node, isBlank, reader, pc)
+						break
+					}
+					continue
+				}
+			}
+			// current node may be closed or lazy continuation
+			isBlank := isBlankLine(lineNum-1, i, blankLines)
+			thisParent := parent
+			if i != 0 {
+				thisParent = openedBlocks[i-1].Node
+			}
+			lastNode := openedBlocks[lastIndex].Node
+			result := p.openBlocks(thisParent, isBlank, reader, pc)
+			if result != paragraphContinuation {
+				// lastNode is a paragraph and was transformed by the paragraph
+				// transformers.
+				if openedBlocks[lastIndex].Node != lastNode {
+					lastIndex--
+				}
+				//p.closeBlocks(lastIndex, i, reader, pc)
+			}
+			break
 		}
-		reader.AdvanceLine()
-		blankLines = blankLines[0:0]
-		for { // process opened blocks line by line
-			openedBlocks := pc.OpenedBlocks()
-			l := len(openedBlocks)
-			if l == 0 {
-				break
-			}
-			lastIndex := l - 1
-			for i := 0; i < l; i++ {
-				be := openedBlocks[i]
-				line, _ := reader.PeekLine()
-				if line == nil {
-					p.closeBlocks(lastIndex, 0, reader, pc)
-					reader.AdvanceLine()
-					return
-				}
-				lineNum, _ := reader.Position()
-				blankLines = append(blankLines, lineStat{lineNum, i, util.IsBlank(line)})
-				// If node is a paragraph, p.openBlocks determines whether it is continuable.
-				// So we do not process paragraphs here.
-				if !ast.IsParagraph(be.Node) {
-					state := be.Parser.Continue(be.Node, reader, pc)
-					if state&Continue != 0 {
-						// When current node is a container block and has no children,
-						// we try to open new child nodes
-						if state&HasChildren != 0 && i == lastIndex {
-							isBlank := isBlankLine(lineNum-1, i+1, blankLines)
-							p.openBlocks(be.Node, isBlank, reader, pc)
-							break
-						}
-						continue
-					}
-				}
-				// current node may be closed or lazy continuation
-				isBlank := isBlankLine(lineNum-1, i, blankLines)
-				thisParent := parent
-				if i != 0 {
-					thisParent = openedBlocks[i-1].Node
-				}
-				lastNode := openedBlocks[lastIndex].Node
-				result := p.openBlocks(thisParent, isBlank, reader, pc)
-				if result != paragraphContinuation {
-					// lastNode is a paragraph and was transformed by the paragraph
-					// transformers.
-					if openedBlocks[lastIndex].Node != lastNode {
-						lastIndex--
-					}
-					//p.closeBlocks(lastIndex, i, reader, pc)
-				}
-				break
-			}
 
-			reader.AdvanceLine()
-		}
+		reader.AdvanceLine()
 	}
 }
 

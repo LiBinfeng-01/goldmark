@@ -3,6 +3,8 @@ package goldmark_test
 import (
 	"bufio"
 	"fmt"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/parser"
 	"io"
 	"os"
 	"testing"
@@ -76,20 +78,27 @@ func TestMarkdownLexerDebug(t *testing.T) {
 		}
 	}()
 
-	reader := text.NewStreamReader(dataChan)
+	reader := text.NewStreamReader1(dataChan)
 	//ctx := parser.NewContext()
 	//for {
 	//	block := markdown.Parser().NextBlock(reader, parser.WithContext(ctx))
 	//	block.Node.Dump(source, 0) // 直接输出或进行其他处理
 	//}
+
+	root := ast.NewDocument()
+	ctx := parser.NewContext(parser.Block{root, nil, 1})
+	ctx.Node2Id()[root] = 1
+	ctx.Level2Node()[0] = root
+	ctx.SetOpenedBlocks(nil)
 	markdown := New(
 		WithExtensions(
 			extension.Table,
 			extension.GFM,
 		),
 	)
-
-	markdown.Parser().Parse(reader)
+	for { // process blocks separated by blank lines
+		markdown.Parser().Parse(reader, parser.WithContext(ctx))
+	}
 
 	//doc.Dump(source, 0)
 	//
