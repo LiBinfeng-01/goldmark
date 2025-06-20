@@ -561,7 +561,7 @@ type Parser interface {
 	Parse(reader text.Reader, opts ...ParseOption) ast.Node
 
 	// get block by line, cache by block stack
-	NextBlock(reader text.Reader, opts ...ParseOption) Block
+	NextBlock(reader text.Reader, opts ...ParseOption) [][]byte
 
 	// AddOption adds the given option to this parser.
 	AddOptions(...Option)
@@ -980,7 +980,7 @@ func (p *parser) Parse(reader text.Reader, opts ...ParseOption) ast.Node {
 	return root
 }
 
-func (p *parser) NextBlock(reader text.Reader, opts ...ParseOption) Block {
+func (p *parser) NextBlock(reader text.Reader, opts ...ParseOption) [][]byte {
 	c := &ParseConfig{}
 	for _, opt := range opts {
 		opt(c)
@@ -990,7 +990,7 @@ func (p *parser) NextBlock(reader text.Reader, opts ...ParseOption) Block {
 	}
 	pc := c.Context
 	root := pc.Root().Node
-	p.nextBlock(root, reader, pc)
+	return p.nextBlock(root, reader, pc)
 
 	//blockReader := text.NewBlockReader(reader.Source(), nil)
 	//p.walkBlock(root, func(node ast.Node) {
@@ -1001,7 +1001,6 @@ func (p *parser) NextBlock(reader text.Reader, opts ...ParseOption) Block {
 	//}
 
 	// root.Dump(reader.Source(), 0)
-	return Block{}
 }
 
 func (p *parser) transformParagraph(node *ast.Paragraph, reader text.Reader, pc Context) bool {
@@ -1022,7 +1021,8 @@ func (p *parser) closeBlocks(from, to int, reader text.Reader, pc Context) {
 		if ok && node.Parent() != nil {
 			p.transformParagraph(paragraph, reader, pc)
 		}
-		fmt.Printf("=====close=====\nid:%d with parent %d\n", blocks[i].Id, pc.Relation()[blocks[i].Id])
+		text := node.Text(reader.Source())
+		fmt.Printf("=====close=====\nid:%d with parent %d with content: %s\n", blocks[i].Id, pc.Relation()[blocks[i].Id], text)
 		blocks[i].Node.Dump(reader.Source(), 1)
 		if node.Parent() != nil { // closes only if node has not been transformed
 			blocks[i].Parser.Close(blocks[i].Node, reader, pc)
@@ -1194,60 +1194,63 @@ func (p *parser) parseBlocks(parent ast.Node, reader text.Reader, pc Context) {
 	reader.AdvanceLine()
 }
 
-func (p *parser) nextBlock(parent ast.Node, reader text.Reader, pc Context) Block {
-	blankLines := pc.BlankLine()
-	openedBlocks := pc.OpenedBlocks()
-	l := len(openedBlocks)
-	if l == 0 {
-		return Block{}
-	}
-	lastIndex := l - 1
-	for i := 0; i < l; i++ {
-		be := openedBlocks[i]
-		line, _ := reader.PeekLine()
-		if line == nil {
-			p.closeBlocks(lastIndex, 0, reader, pc)
-			reader.AdvanceLine()
-			return Block{}
+func (p *parser) nextBlock(parent ast.Node, reader text.Reader, pc Context) [][]byte {
+	result := make([][]byte, 0)
+	for {
+		blankLines := pc.BlankLine()
+		openedBlocks := pc.OpenedBlocks()
+		l := len(openedBlocks)
+		if l == 0 {
+			return result
 		}
-		lineNum, _ := reader.Position()
-		blankLines = append(blankLines, lineStat{lineNum, i, util.IsBlank(line)})
-		pc.SetBlankLine(blankLines)
-		// If node is a paragraph, p.openBlocks determines whether it is continuable.
-		// So we do not process paragraphs here.
-		if !ast.IsParagraph(be.Node) {
-			state := be.Parser.Continue(be.Node, reader, pc)
-			if state&Continue != 0 {
-				// When current node is a container block and has no children,
-				// we try to open new child nodes
-				if state&HasChildren != 0 && i == lastIndex {
-					isBlank := isBlankLine(lineNum-1, i+1, blankLines)
-					p.openBlocks(be.Node, isBlank, reader, pc)
-					break
+		lastIndex := l - 1
+		for i := 0; i < l; i++ {
+			be := openedBlocks[i]
+			line, _ := reader.PeekLine()
+			if line == nil {
+				p.closeBlocks(lastIndex, 0, reader, pc)
+				reader.AdvanceLine()
+				return [][]byte{}
+			}
+			lineNum, _ := reader.Position()
+			blankLines = append(blankLines, lineStat{lineNum, i, util.IsBlank(line)})
+			pc.SetBlankLine(blankLines)
+			// If node is a paragraph, p.openBlocks determines whether it is continuable.
+			// So we do not process paragraphs here.
+			if !ast.IsParagraph(be.Node) {
+				state := be.Parser.Continue(be.Node, reader, pc)
+				if state&Continue != 0 {
+					// When current node is a container block and has no children,
+					// we try to open new child nodes
+					if state&HasChildren != 0 && i == lastIndex {
+						isBlank := isBlankLine(lineNum-1, i+1, blankLines)
+						p.openBlocks(be.Node, isBlank, reader, pc)
+						break
+					}
+					continue
 				}
-				continue
 			}
-		}
-		// current node may be closed or lazy continuation
-		isBlank := isBlankLine(lineNum-1, i, blankLines)
-		thisParent := parent
-		if i != 0 {
-			thisParent = openedBlocks[i-1].Node
-		}
-		lastNode := openedBlocks[lastIndex].Node
-		result := p.openBlocks(thisParent, isBlank, reader, pc)
-		if result != paragraphContinuation {
-			// lastNode is a paragraph and was transformed by the paragraph
-			// transformers.
-			if openedBlocks[lastIndex].Node != lastNode {
-				lastIndex--
+			// current node may be closed or lazy continuation
+			isBlank := isBlankLine(lineNum-1, i, blankLines)
+			thisParent := parent
+			if i != 0 {
+				thisParent = openedBlocks[i-1].Node
 			}
-			//p.closeBlocks(lastIndex, i, reader, pc)
+			lastNode := openedBlocks[lastIndex].Node
+			result := p.openBlocks(thisParent, isBlank, reader, pc)
+			if result != paragraphContinuation {
+				// lastNode is a paragraph and was transformed by the paragraph
+				// transformers.
+				if openedBlocks[lastIndex].Node != lastNode {
+					lastIndex--
+				}
+				//p.closeBlocks(lastIndex, i, reader, pc)
+			}
+			break
 		}
-		break
+		reader.AdvanceLine()
 	}
-	reader.AdvanceLine()
-	return Block{}
+	return result
 }
 
 func (p *parser) walkBlock(block ast.Node, cb func(node ast.Node)) {
