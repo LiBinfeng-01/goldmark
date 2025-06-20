@@ -15,30 +15,6 @@ import (
 )
 
 func TestMarkdownLexerDebug(t *testing.T) {
-	//	markdownContent := `
-	//# 1111
-	//## 2222
-	//3333.
-	//
-	//### 4444
-	//
-	//| 表头1 | 表头2 | 表头3 |
-	//|---|---|---|
-	//| 值1 | 值2 | 值3 |
-	//| 值4 | 值5 | 值6 |
-	//
-	//- 5555
-	//- 6666
-	//
-	//## 7777
-	//> 8888
-	//
-	//~~~go
-	//9999
-	//~~~
-	//`
-	//	source := []byte(markdownContent)
-	//	reader := text.NewReader(source)
 	const bufferSize = 1000                   // 缓冲区容量（队列长度）
 	dataChan := make(chan []byte, bufferSize) // 带缓冲通道作为队列
 
@@ -96,8 +72,9 @@ func TestMarkdownLexerDebug(t *testing.T) {
 			extension.GFM,
 		),
 	)
-	for { // process blocks separated by blank lines
-		markdown.Parser().Parse(reader, parser.WithContext(ctx))
+	markdown.Parser().Parse(reader, parser.WithContext(ctx))
+	for i := 0; i < 20; i++ { // process blocks separated by blank lines
+		markdown.Parser().NextBlock(reader, parser.WithContext(ctx))
 	}
 
 	//doc.Dump(source, 0)
