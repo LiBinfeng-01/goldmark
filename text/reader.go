@@ -61,7 +61,7 @@ type Reader interface {
 	AdvanceToEOL()
 
 	// AdvanceLine advances the internal pointer to the next line head.
-	AdvanceLine()
+	AdvanceLine() (error)
 
 	// SkipSpaces skips space characters and returns a non-blank line.
 	// If it reaches EOF, returns false.
@@ -254,13 +254,13 @@ func (r *reader) AdvanceToEOL() {
 	r.pos.Padding = 0
 }
 
-func (r *reader) AdvanceLine() {
+func (r *reader) AdvanceLine() (error) {
 	r.lineOffset = -1
 	r.peekedLine = nil
 	r.pos.Start = r.pos.Stop
 	r.head = r.pos.Start
 	if r.pos.Start < 0 || r.pos.Start >= r.sourceLength {
-		return
+		return nil
 	}
 	r.pos.Stop = r.sourceLength
 	i := 0
@@ -272,6 +272,7 @@ func (r *reader) AdvanceLine() {
 	}
 	r.line++
 	r.pos.Padding = 0
+	return nil
 }
 
 func (r *reader) Position() (int, Segment) {
@@ -493,9 +494,10 @@ func (r *blockReader) AdvanceToEOL() {
 	}
 }
 
-func (r *blockReader) AdvanceLine() {
+func (r *blockReader) AdvanceLine() (error) {
 	r.SetPosition(r.line+1, NewSegment(invalidValue, invalidValue))
 	r.head = r.pos.Start
+	return nil
 }
 
 func (r *blockReader) Position() (int, Segment) {

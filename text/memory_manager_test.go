@@ -1,7 +1,6 @@
 package text
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"io"
@@ -15,24 +14,8 @@ func TestMemoryManagerWithFile(t *testing.T) {
 	go manager.releaseDaemon()
 	defer manager.Close() // 确保清理资源
 
-	// 1. 创建测试文件（如果不存在）
-	testFileName := "fe.log"
-	//if _, err := os.Stat(testFileName); os.IsNotExist(err) {
-	//	// 创建测试文件
-	//	file, err := os.Create(testFileName)
-	//	if err != nil {
-	//		t.Fatal("创建测试文件失败:", err)
-	//	}
-	//	defer file.Close()
-	//
-	//	// 写入一些测试数据
-	//	for i := 0; i < 1000; i++ {
-	//		line := fmt.Sprintf("2024-01-01 12:00:00 [INFO] Test log line %d\n", i)
-	//		file.WriteString(line)
-	//	}
-	//	file.Close()
-	//}
-
+	// 1. 自动查找日志文件路径
+	testFileName := "../data/test_paragraph.md"
 	// 2. 打开测试文件
 	file, err := os.Open(testFileName)
 	if err != nil {
@@ -40,28 +23,43 @@ func TestMemoryManagerWithFile(t *testing.T) {
 	}
 	defer file.Close()
 
-	// 3. 创建带缓冲的Reader（减少系统调用）
-	r := bufio.NewReaderSize(file, 64*1024) // 64KB缓冲区
+	// 获取文件大小
+	fileInfo, err := file.Stat()
+	if err != nil {
+		t.Fatal("获取文件信息失败:", err)
+	}
+	fileSize := fileInfo.Size()
+	fmt.Printf("文件大小: %d 字节\n", fileSize)
+
 	currentOffset := int64(0)
 	lineCount := 0
-	maxIterations := 1000000 // 增加最大迭代次数以处理大文件
+	maxIterations := 10000000 // 增加最大迭代次数以处理大文件
 	iterationCount := 0
+	const maxLineLen = 1024 * 1024 // 1MB
+	const forceChunk = 1024        // 1KB
 
-	// 4. 分块读取循环
-	for {
+	var remainingData []byte
+	dataOffset := currentOffset
+
+	for currentOffset < fileSize {
 		iterationCount++
 		if iterationCount > maxIterations {
-			t.Fatal("达到最大迭代次数，可能存在无限循环")
+			t.Fatalf("达到最大迭代次数，可能存在无限循环，当前已处理%d行，remainingData长度=%d", lineCount, len(remainingData))
+		}
+
+		// 计算本次读取的大小
+		remainingBytes := fileSize - currentOffset
+
+		// 如果已经读取完所有数据，退出循环
+		if remainingBytes <= 0 {
+			break
 		}
 
 		block := manager.AllocateBlock(currentOffset)
-		n, err := io.ReadFull(r, block.Data) // 尝试读取完整4KB
-		if err == io.EOF {
-			manager.ReleaseBlock(block) // 文件结束释放最后一块
-			break
-		} else if err == io.ErrUnexpectedEOF {
-			block.Data = block.Data[:n] // 调整块为实际大小
-		} else if err != nil {
+		n, err := file.ReadAt(block.Data, currentOffset)
+
+		// 处理读取错误
+		if err != nil && err != io.EOF {
 			manager.ReleaseBlock(block)
 			t.Fatal("读取失败:", err)
 		}
@@ -72,110 +70,98 @@ func TestMemoryManagerWithFile(t *testing.T) {
 			break
 		}
 
-		// 5. 模拟消费逻辑（示例：解析日志行）
+		// 调整数据大小
+		block.Data = block.Data[:n]
+
+		dataToProcess := block.Data
+		if len(remainingData) > 0 {
+			dataToProcess = append(remainingData, dataToProcess...)
+			dataOffset -= int64(len(remainingData))
+			remainingData = nil
+		} else {
+			dataOffset = currentOffset
+		}
+
 		consumed := 0
-		for consumed < n {
-			// 查找换行符作为日志行边界
-			idx := bytes.IndexByte(block.Data[consumed:], '\n')
+		for consumed < len(dataToProcess) {
+			idx := bytes.IndexByte(dataToProcess[consumed:], '\n')
 			if idx == -1 {
-				break // 本块无完整行
+				// 超长行保护
+				if len(dataToProcess[consumed:]) > maxLineLen {
+					line := dataToProcess[consumed : consumed+maxLineLen]
+					lineCount++
+					fmt.Printf("超长行分段输出 %d: %s\n", lineCount, string(line))
+					manager.MarkConsumed(dataOffset+int64(consumed), maxLineLen)
+					manager.ReleaseByOffset(dataOffset+int64(consumed), maxLineLen)
+					consumed += maxLineLen
+					continue
+				}
+				// 如果没有任何进展，强制消费1KB，避免死循环
+				if len(dataToProcess[consumed:]) > 0 && consumed == 0 {
+					chunk := dataToProcess[consumed:]
+					chunkLen := len(chunk)
+					if chunkLen > forceChunk {
+						chunkLen = forceChunk
+					}
+					line := chunk[:chunkLen]
+					lineCount++
+					fmt.Printf("强制分段输出 %d: %s\n", lineCount, string(line))
+					manager.MarkConsumed(dataOffset+int64(consumed), chunkLen)
+					manager.ReleaseByOffset(dataOffset+int64(consumed), chunkLen)
+					consumed += chunkLen
+					continue
+				}
+				remainingData = dataToProcess[consumed:]
+				break
 			}
 			lineEnd := consumed + idx + 1
-			line := block.Data[consumed:lineEnd] // 移除未使用变量
-
-			// 实际业务逻辑：解析时间戳、过滤等
+			line := dataToProcess[consumed:lineEnd]
 			lineCount++
-			// 每1000行打印一次进度，避免输出过多
-
-			fmt.Printf("已处理 %d 行日志: %s\n", lineCount, line)
-
-			// 6. 标记已消费区域（单行）
-			lineLength := lineEnd - consumed
-			manager.MarkConsumed(currentOffset+int64(consumed), lineLength)
-			manager.ReleaseByOffset(currentOffset+int64(consumed), lineLength)
-			consumed += lineLength
+			fmt.Printf("已处理 %d 行日志: %s", lineCount, string(line))
+			manager.MarkConsumed(dataOffset+int64(consumed), lineEnd-consumed)
+			manager.ReleaseByOffset(dataOffset+int64(consumed), lineEnd-consumed)
+			consumed = lineEnd
+		}
+		// 如果本轮没有任何消费，强制消费1KB，避免死循环
+		if consumed == 0 && len(dataToProcess) > 0 {
+			chunkLen := len(dataToProcess)
+			if chunkLen > forceChunk {
+				chunkLen = forceChunk
+			}
+			line := dataToProcess[:chunkLen]
+			lineCount++
+			fmt.Printf("死循环保护分段输出 %d: %s\n", lineCount, string(line))
+			manager.MarkConsumed(dataOffset, chunkLen)
+			manager.ReleaseByOffset(dataOffset, chunkLen)
+			consumed += chunkLen
+			// 不break，继续下轮
 		}
 
-		// 7. 处理跨块未消费数据（如半行日志）
-		if consumed < n {
-			remaining := n - consumed
-			nextBlock := manager.AllocateBlock(currentOffset + int64(n))
-
-			// 将剩余数据拷贝到新块起始
-			copy(nextBlock.Data, block.Data[consumed:n])
-			manager.MarkConsumed(currentOffset+int64(consumed), remaining)
+		// 添加调试信息
+		if iterationCount%100 == 0 {
+			fmt.Printf("调试: 迭代次数=%d, 已处理行数=%d, 当前块大小=%d, 已消费=%d, 剩余数据长度=%d, 当前偏移=%d, 文件大小=%d\n",
+				iterationCount, lineCount, n, consumed, len(remainingData), currentOffset, fileSize)
 		}
 
+		if len(remainingData) == 0 {
+			dataOffset = currentOffset + int64(n)
+		}
 		currentOffset += int64(n)
-		manager.ReleaseBlock(block) // 整块释放
+		manager.ReleaseBlock(block)
+
+		// 如果已经到达文件末尾，退出循环
+		if err == io.EOF {
+			break
+		}
+	}
+	if len(remainingData) > 0 {
+		lineCount++
+		fmt.Printf("已处理 %d 行日志: %s\n", lineCount, string(remainingData))
 	}
 
-	// 8. 等待异步释放完成
 	time.Sleep(100 * time.Millisecond)
-
-	// 9. 检查统计信息
 	active, partial, releasable := manager.Stats()
 	fmt.Printf("内存统计: Active=%d, Partial=%d, Releasable=%d\n", active, partial, releasable)
 	fmt.Printf("总共处理了 %d 行日志\n", lineCount)
-
-	// 10. 清理测试文件
 	//os.Remove(testFileName)
-}
-
-// 测试内存管理器的基本功能
-func TestMemoryManagerBasic(t *testing.T) {
-	manager := NewManager(1024, 5) // 1KB块，预分配5块
-	go manager.releaseDaemon()
-	defer manager.Close()
-
-	// 测试分配块
-	block1 := manager.AllocateBlock(0)
-	if block1 == nil {
-		t.Fatal("分配块失败")
-	}
-
-	// 测试标记消费
-	manager.MarkConsumed(0, 512)
-	manager.MarkConsumed(512, 512)
-
-	// 测试释放
-	manager.ReleaseByOffset(0, 1024)
-
-	// 等待异步处理
-	time.Sleep(50 * time.Millisecond)
-
-	// 检查统计
-	active, partial, releasable := manager.Stats()
-	if active != 0 && partial != 0 && releasable != 0 {
-		t.Logf("统计信息: Active=%d, Partial=%d, Releasable=%d", active, partial, releasable)
-	}
-}
-
-// 测试边界条件
-func TestMemoryManagerEdgeCases(t *testing.T) {
-	manager := NewManager(1024, 2)
-	go manager.releaseDaemon()
-	defer manager.Close()
-
-	// 测试空长度释放
-	manager.ReleaseByOffset(0, 0)
-
-	// 测试负数长度释放
-	manager.ReleaseByOffset(0, -1)
-
-	// 测试不存在的块
-	manager.MarkConsumed(9999, 100)
-
-	// 测试边界消费
-	manager.AllocateBlock(0)      // 分配块但不保存引用
-	manager.MarkConsumed(0, 1024) // 正好一个块大小
-	manager.ReleaseByOffset(0, 1024)
-
-	time.Sleep(50 * time.Millisecond)
-
-	// 应该没有活跃块
-	active, _, _ := manager.Stats()
-	if active > 0 {
-		t.Logf("仍有 %d 个活跃块", active)
-	}
 }

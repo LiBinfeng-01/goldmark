@@ -1,6 +1,9 @@
 package text
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 type MemoryBlock struct {
 	Data     []byte          // 数据存储区
@@ -53,6 +56,9 @@ func (m *MemoryManager) AllocateBlock(startOffset int64) *MemoryBlock {
 	block.Usage = 0
 	block.Status = BlockActive
 
+	// 重置数据切片长度，确保有完整的缓冲区
+	block.Data = block.Data[:cap(block.Data)]
+
 	m.mu.Lock()
 	m.activeMap[startOffset] = block
 	m.mu.Unlock()
@@ -61,6 +67,10 @@ func (m *MemoryManager) AllocateBlock(startOffset int64) *MemoryBlock {
 
 // 记录消费进度
 func (m *MemoryManager) MarkConsumed(offset int64, length int) {
+	if length <= 0 {
+		return
+	}
+	
 	// 计算对应的 block start offset
 	blockStart := (offset / int64(m.buffSize)) * int64(m.buffSize)
 	
@@ -72,7 +82,17 @@ func (m *MemoryManager) MarkConsumed(offset int64, length int) {
 		return // 块不存在，忽略
 	}
 
-	block.Usage += length
+	// 计算在当前块内的实际消费长度
+	blockOffset := offset - blockStart
+	actualLength := length
+	
+	// 如果消费长度超出了当前块，需要调整
+	if blockOffset + int64(length) > int64(m.buffSize) {
+		actualLength = m.buffSize - int(blockOffset)
+	}
+
+	block.Usage += actualLength
+	
 	// 状态转换逻辑 - 修复边界条件
 	if block.Usage >= m.buffSize {
 		block.Status = BlockReleasable
@@ -88,7 +108,7 @@ func (m *MemoryManager) ReleaseByOffset(offset int64, length int) {
 	}
 	
 	startBlockIdx := offset / int64(m.buffSize)   // 起始块索引
-	endBlockIdx := (offset + int64(length) - 1) / int64(m.buffSize) // 结束块索引，修复边界
+	endBlockIdx := (offset + int64(length) - 1) / int64(m.buffSize) // 结束块索引
 
 	for idx := startBlockIdx; idx <= endBlockIdx; idx++ {
 		blockStart := idx * int64(m.buffSize)
@@ -96,23 +116,37 @@ func (m *MemoryManager) ReleaseByOffset(offset int64, length int) {
 		block := m.activeMap[blockStart]
 		m.mu.RUnlock()
 
-		if block == nil || block.Status != BlockReleasable {
+		if block == nil {
 			continue
 		}
-		// 安全释放（异步避免阻塞主线程）
-		select {
-		case m.releaseChan <- blockStart:
-		default:
-			// 如果 channel 满了，直接释放
-			m.mu.Lock()
-			if b, exists := m.activeMap[blockStart]; exists {
-				delete(m.activeMap, blockStart)
-				b.Data = b.Data[:0]
-				m.blockPool.Put(b)
+		
+		// 只有当块完全被消费时才释放
+		if block.Status == BlockReleasable {
+			// 安全释放（异步避免阻塞主线程）
+			select {
+			case m.releaseChan <- blockStart:
+			default:
+				// 如果 channel 满了，直接释放
+				m.mu.Lock()
+				if b, exists := m.activeMap[blockStart]; exists {
+					delete(m.activeMap, blockStart)
+					b.Data = b.Data[:0]
+					m.blockPool.Put(b)
+				}
+				m.mu.Unlock()
 			}
-			m.mu.Unlock()
 		}
 	}
+}
+
+func (m *MemoryManager) GetBlockByOffset(offset int64) *MemoryBlock {
+	startBlockIdx := offset / int64(m.buffSize)   // 起始块索引
+	blockStart := startBlockIdx * int64(m.buffSize)
+	m.mu.RLock()
+	block := m.activeMap[blockStart]
+	m.mu.RUnlock()
+
+	return block
 }
 
 // 释放整块内存（无论是否完全消费）
@@ -166,4 +200,30 @@ func (m *MemoryManager) Stats() (active, partial, releasable int) {
 		}
 	}
 	return
+}
+
+// 调试方法：打印所有活跃块的详细信息
+func (m *MemoryManager) DebugBlocks() {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
+	fmt.Printf("=== 内存管理器调试信息 ===\n")
+	fmt.Printf("缓冲区大小: %d bytes\n", m.buffSize)
+	fmt.Printf("活跃块数量: %d\n", len(m.activeMap))
+	
+	for startOffset, block := range m.activeMap {
+		statusStr := "Unknown"
+		switch block.Status {
+		case BlockActive:
+			statusStr = "Active"
+		case BlockPartial:
+			statusStr = "Partial"
+		case BlockReleasable:
+			statusStr = "Releasable"
+		}
+		
+		fmt.Printf("块 [%d]: 状态=%s, 使用=%d/%d, 数据长度=%d\n", 
+			startOffset, statusStr, block.Usage, m.buffSize, len(block.Data))
+	}
+	fmt.Printf("========================\n")
 }
