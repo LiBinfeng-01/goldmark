@@ -173,6 +173,10 @@ type Node interface {
 
 	// RemoveAttributes removes all attributes from this node.
 	RemoveAttributes()
+
+	ReleaseNode()
+
+	IsReleased() bool
 }
 
 // A BaseNode struct implements the Node interface partialliy.
@@ -184,6 +188,7 @@ type BaseNode struct {
 	prev       Node
 	childCount int
 	attributes []Attribute
+	isReleased bool
 }
 
 func ensureIsolated(v Node) {
@@ -443,6 +448,14 @@ func (n *BaseNode) Attributes() []Attribute {
 // RemoveAttributes implements Node.RemoveAttributes.
 func (n *BaseNode) RemoveAttributes() {
 	n.attributes = nil
+}
+
+func (n *BaseNode) ReleaseNode() {
+	n.isReleased = true
+}
+
+func (n *BaseNode) IsReleased() bool {
+	return n.isReleased
 }
 
 // DumpHelper is a helper function to implement Node.Dump.

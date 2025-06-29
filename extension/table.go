@@ -171,6 +171,7 @@ func (b *tableParagraphTransformer) Transform(node *gast.Paragraph, reader text.
 		}
 		node.Lines().SetSliced(0, i-1)
 		node.Parent().InsertAfter(node.Parent(), node, table)
+		pc.TranslateBlock().Node = table
 		if node.Lines().Len() == 0 {
 			node.Parent().RemoveChild(node.Parent(), node)
 		} else {

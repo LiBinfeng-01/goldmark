@@ -164,7 +164,7 @@ func (b *atxHeadingParser) Open(parent ast.Node, reader text.Reader, pc Context)
 	return node, NoChildren
 }
 
-func (b *atxHeadingParser) Continue(node ast.Node, reader text.Reader, pc Context) State {
+func (b *atxHeadingParser) Continue(block *Block, reader text.Reader, pc Context) State {
 	return Close
 }
 

@@ -188,6 +188,17 @@ type Heading struct {
 	Level int
 }
 
+// IsHeading returns true if the given node implements the Paragraph interface,
+// otherwise false.
+func IsHeading(node Node) bool {
+	_, ok := node.(*Heading)
+	return ok
+}
+
+func HeadingLevel(node Node) int {
+	return node.(*Heading).Level
+}
+
 // Dump implements Node.Dump .
 func (n *Heading) Dump(source []byte, level int) {
 	m := map[string]string{
@@ -337,6 +348,13 @@ func NewFencedCodeBlock(info *Text) *FencedCodeBlock {
 	}
 }
 
+// IsFencedCodeBlock returns true if the given node implements the FencedCodeBlock interface,
+// otherwise false.
+func IsFencedCodeBlock(node Node) bool {
+	_, ok := node.(*FencedCodeBlock)
+	return ok
+}
+
 // A Blockquote struct represents an blockquote block of Markdown text.
 type Blockquote struct {
 	BaseBlock
@@ -360,6 +378,13 @@ func NewBlockquote() *Blockquote {
 	return &Blockquote{
 		BaseBlock: BaseBlock{},
 	}
+}
+
+// IsBlockquote returns true if the given node implements the Blockquote interface,
+// otherwise false.
+func IsBlockquote(node Node) bool {
+	_, ok := node.(*Blockquote)
+	return ok
 }
 
 // A List struct represents a list of Markdown text.
@@ -417,6 +442,13 @@ func NewList(marker byte) *List {
 		Marker:    marker,
 		IsTight:   true,
 	}
+}
+
+// IsList returns true if the given node implements the List interface,
+// otherwise false.
+func IsList(node Node) bool {
+	_, ok := node.(*List)
+	return ok
 }
 
 // A ListItem struct represents a list item of Markdown text.

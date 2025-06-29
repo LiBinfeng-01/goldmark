@@ -50,7 +50,7 @@ func (b *blockquoteParser) Open(parent ast.Node, reader text.Reader, pc Context)
 	return nil, NoChildren
 }
 
-func (b *blockquoteParser) Continue(node ast.Node, reader text.Reader, pc Context) State {
+func (b *blockquoteParser) Continue(block *Block, reader text.Reader, pc Context) State {
 	if b.process(reader) {
 		return Continue | HasChildren
 	}

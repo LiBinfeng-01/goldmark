@@ -73,7 +73,7 @@ func (b *setextHeadingParser) Open(parent ast.Node, reader text.Reader, pc Conte
 	return node, NoChildren | RequireParagraph
 }
 
-func (b *setextHeadingParser) Continue(node ast.Node, reader text.Reader, pc Context) State {
+func (b *setextHeadingParser) Continue(block *Block, reader text.Reader, pc Context) State {
 	return Close
 }
 

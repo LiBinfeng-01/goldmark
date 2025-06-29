@@ -79,6 +79,10 @@ type Reader interface {
 
 	// FindClosure finds corresponding closure.
 	FindClosure(opener, closer byte, options FindClosureOptions) (*Segments, bool)
+
+	// ReleaseProcessedData releases memory for processed data.
+	// This is optional and may be a no-op for readers that don't support memory management.
+	ReleaseProcessedData()
 }
 
 // FindClosureOptions is options for Reader.FindClosure.
@@ -298,6 +302,10 @@ func (r *reader) Match(reg *regexp.Regexp) bool {
 
 func (r *reader) FindSubMatch(reg *regexp.Regexp) [][]byte {
 	return findSubMatchReader(r, reg)
+}
+
+func (r *reader) ReleaseProcessedData() {
+	// No-op for regular reader - it doesn't manage memory
 }
 
 // A BlockReader interface is a reader that is optimized for Blocks.
@@ -531,6 +539,10 @@ func (r *blockReader) Match(reg *regexp.Regexp) bool {
 
 func (r *blockReader) FindSubMatch(reg *regexp.Regexp) [][]byte {
 	return findSubMatchReader(r, reg)
+}
+
+func (r *blockReader) ReleaseProcessedData() {
+	// No-op for block reader - it doesn't manage memory
 }
 
 func skipBlankLinesReader(r Reader) (Segment, int, bool) {

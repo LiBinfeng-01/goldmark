@@ -42,7 +42,8 @@ func (b *codeBlockParser) Open(parent ast.Node, reader text.Reader, pc Context) 
 
 }
 
-func (b *codeBlockParser) Continue(node ast.Node, reader text.Reader, pc Context) State {
+func (b *codeBlockParser) Continue(block *Block, reader text.Reader, pc Context) State {
+	node := block.Node
 	line, segment := reader.PeekLine()
 	if util.IsBlank(line) {
 		node.Lines().Append(segment.TrimLeftSpaceWidth(4, reader.Source()))

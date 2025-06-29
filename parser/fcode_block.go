@@ -68,7 +68,8 @@ func (b *fencedCodeBlockParser) Open(parent ast.Node, reader text.Reader, pc Con
 
 }
 
-func (b *fencedCodeBlockParser) Continue(node ast.Node, reader text.Reader, pc Context) State {
+func (b *fencedCodeBlockParser) Continue(block *Block, reader text.Reader, pc Context) State {
+	node := block.Node
 	line, segment := reader.PeekLine()
 	fdata := pc.Get(fencedCodeBlockInfoKey).(*fenceData)
 
@@ -83,6 +84,7 @@ func (b *fencedCodeBlockParser) Continue(node ast.Node, reader text.Reader, pc C
 			if line[len(line)-1] != '\n' {
 				newline = 0
 			}
+			block.setLength(block.Length + segment.Len())
 			reader.Advance(segment.Stop - segment.Start - newline + segment.Padding)
 			return Close
 		}
@@ -101,7 +103,31 @@ func (b *fencedCodeBlockParser) Continue(node ast.Node, reader text.Reader, pc C
 		preserveLeadingTabInCodeBlock(&seg, reader, fdata.indent)
 	}
 	seg.ForceNewline = true // EOF as newline
+	if block.Length+segment.Len() > pc.SizeLimit() {
+		firstSeqID := block.SeqId
+		if block.FirstSeqId == 0 {
+			block.setFirstSeqId(firstSeqID)
+		} else {
+			firstSeqID = block.FirstSeqId
+		}
+		fdata := pc.Get(fencedCodeBlockInfoKey).(*fenceData)
+		newNode := ast.NewFencedCodeBlock(node.(*ast.FencedCodeBlock).Info)
+
+		fdata.node = newNode
+		node.Parent().AppendChild(node.Parent(), newNode)
+		seqId := pc.IDs().GenerateIntID()
+		be := Block{newNode, block.Parser, segment.Len(), seqId, firstSeqID, segment.Start}
+		level := pc.CurrentLevel()
+		parentNode := pc.Level2Node()[level]
+		pc.SeqID2Parent()[seqId] = pc.Node2SeqID()[parentNode]
+		pc.Node2SeqID()[newNode] = seqId
+		pc.SetOpenedBlocks(append(pc.OpenedBlocks(), be))
+		newNode.Lines().Append(seg)
+		reader.AdvanceAndSetPadding(segment.Stop-segment.Start-pos-1, padding)
+		return Close
+	}
 	node.Lines().Append(seg)
+	block.setLength(block.Length + seg.Len())
 	reader.AdvanceAndSetPadding(segment.Stop-segment.Start-pos-1, padding)
 	return Continue | NoChildren
 }

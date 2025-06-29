@@ -33,12 +33,34 @@ func (b *paragraphParser) Open(parent ast.Node, reader text.Reader, pc Context) 
 	return node, NoChildren
 }
 
-func (b *paragraphParser) Continue(node ast.Node, reader text.Reader, pc Context) State {
+func (b *paragraphParser) Continue(block *Block, reader text.Reader, pc Context) State {
+	node := block.Node
 	line, segment := reader.PeekLine()
 	if util.IsBlank(line) {
 		return Close
 	}
+	if block.Length+segment.Len() > pc.SizeLimit() {
+		firstSeqID := block.SeqId
+		if block.FirstSeqId == 0 {
+			block.setFirstSeqId(firstSeqID)
+		} else {
+			firstSeqID = block.FirstSeqId
+		}
+		newNode := ast.NewParagraph()
+		newNode.Lines().Append(segment)
+		reader.AdvanceToEOL()
+		node.Parent().AppendChild(node.Parent(), newNode)
+		seqId := pc.IDs().GenerateIntID()
+		be := Block{newNode, block.Parser, segment.Len(), seqId, firstSeqID, segment.Start}
+		level := pc.CurrentLevel()
+		parentNode := pc.Level2Node()[level]
+		pc.SeqID2Parent()[seqId] = pc.Node2SeqID()[parentNode]
+		pc.Node2SeqID()[newNode] = seqId
+		pc.SetOpenedBlocks(append(pc.OpenedBlocks(), be))
+		return Close
+	}
 	node.Lines().Append(segment)
+	block.setLength(block.Length + segment.Len())
 	reader.AdvanceToEOL()
 	return Continue | NoChildren
 }

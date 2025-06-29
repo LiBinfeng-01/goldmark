@@ -157,7 +157,8 @@ func (b *htmlBlockParser) Open(parent ast.Node, reader text.Reader, pc Context) 
 	return nil, NoChildren
 }
 
-func (b *htmlBlockParser) Continue(node ast.Node, reader text.Reader, pc Context) State {
+func (b *htmlBlockParser) Continue(block *Block, reader text.Reader, pc Context) State {
+	node := block.Node
 	htmlBlock := node.(*ast.HTMLBlock)
 	lines := htmlBlock.Lines()
 	line, segment := reader.PeekLine()
