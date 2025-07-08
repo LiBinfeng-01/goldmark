@@ -25,9 +25,9 @@ func TestMarkdownChunker(t *testing.T) {
 			size := info.Size()
 			chunkReader := chunker.NewChunkReader(ctx, file, int(size), 400, 4096)
 			expectResult := []parser.Chunk{
-				{[]byte("# heading1\n"), ast.KindHeading, 11, 1, 0, 0, 0},
-				{[]byte("aaaa\nbbbb\ncccccccccc.\ndddddddddd.\n"), ast.KindParagraph, 34, 2, 1, 0, 11},
-				{[]byte("## heading2\n"), ast.KindHeading, 12, 3, 1, 0, 45},
+				{Data: []byte("# heading1\n"), ChunkType: ast.KindHeading, Length: 11, SeqId: 1, ParentSeqId: 0, FirstSeqId: 0, ChunkStart: 0},
+				{Data: []byte("aaaa\nbbbb\ncccccccccc.\ndddddddddd.\n"), ChunkType: ast.KindParagraph, Length: 34, SeqId: 2, ParentSeqId: 1, FirstSeqId: 0, ChunkStart: 11},
+				{Data: []byte("## heading2\n"), ChunkType: ast.KindHeading, Length: 12, SeqId: 3, ParentSeqId: 1, FirstSeqId: 0, ChunkStart: 45},
 			}
 
 			var result []parser.Chunk
@@ -36,7 +36,7 @@ func TestMarkdownChunker(t *testing.T) {
 				if err == io.EOF {
 					break
 				}
-				result = append(result, chunk)
+				result = append(result, *chunk)
 			}
 			convey.So(result, convey.ShouldEqual, expectResult)
 		})
@@ -49,11 +49,11 @@ func TestMarkdownChunker(t *testing.T) {
 			size := info.Size()
 			chunkReader := chunker.NewChunkReader(ctx, file, int(size), 20, 4096)
 			expectResult := []parser.Chunk{
-				{[]byte("# heading1\n"), ast.KindHeading, 11, 1, 0, 0, 0},
-				{[]byte("aaaa\nbbbb\n"), ast.KindParagraph, 10, 2, 1, 2, 11},
-				{[]byte("cccccccccc.\n"), ast.KindParagraph, 12, 3, 1, 2, 21},
-				{[]byte("dddddddddd.\n"), ast.KindParagraph, 12, 4, 1, 2, 33},
-				{[]byte("## heading2\n"), ast.KindHeading, 12, 5, 1, 0, 45},
+				{Data: []byte("# heading1\n"), ChunkType: ast.KindHeading, Length: 11, SeqId: 1, ParentSeqId: 0, FirstSeqId: 0, ChunkStart: 0},
+				{Data: []byte("aaaa\nbbbb\n"), ChunkType: ast.KindParagraph, Length: 10, SeqId: 2, ParentSeqId: 1, FirstSeqId: 2, ChunkStart: 11},
+				{Data: []byte("cccccccccc.\n"), ChunkType: ast.KindParagraph, Length: 12, SeqId: 3, ParentSeqId: 1, FirstSeqId: 2, ChunkStart: 21},
+				{Data: []byte("dddddddddd.\n"), ChunkType: ast.KindParagraph, Length: 12, SeqId: 4, ParentSeqId: 1, FirstSeqId: 2, ChunkStart: 33},
+				{Data: []byte("## heading2\n"), ChunkType: ast.KindHeading, Length: 12, SeqId: 5, ParentSeqId: 1, FirstSeqId: 0, ChunkStart: 45},
 			}
 
 			var result []parser.Chunk
@@ -62,7 +62,7 @@ func TestMarkdownChunker(t *testing.T) {
 				if err == io.EOF {
 					break
 				}
-				result = append(result, chunk)
+				result = append(result, *chunk)
 			}
 			convey.So(result, convey.ShouldEqual, expectResult)
 		})
@@ -75,14 +75,14 @@ func TestMarkdownChunker(t *testing.T) {
 			size := info.Size()
 			chunkReader := chunker.NewChunkReader(ctx, file, int(size), 200, 4096)
 			expectResult := []parser.Chunk{
-				{[]byte("# heading1\n"), ast.KindHeading, 11, 1, 0, 0, 0},
-				{[]byte("\n| Name | Type | Required | Description |\n|------|------|----------|-------------|\n| 1    | 1    | 1        | 1           |\n| 2    | 2    | 2        | 2           |\n"),
-					east.KindTable, 165, 2, 1, 2, 11},
-				{[]byte("| 3    | 3    | 3        | 3           |\n"), east.KindTable, 41, 3, 1, 2, 176},
-				{[]byte("\n| Name | Type | Required | Description |\n|------|------|----------|-------------|\n| 1    | 1    | 1        | 1           |\n| 2    | 2    | 2        | 2           |\n"),
-					east.KindTable, 165, 4, 1, 2, 217},
-				{[]byte("## distroy line\n"), ast.KindHeading, 16, 5, 1, 0, 382},
-				{[]byte("| 3    | 3    | 3        | 3           |"), ast.KindParagraph, 40, 6, 5, 0, 398},
+				{Data: []byte("# heading1\n"), ChunkType: ast.KindHeading, Length: 11, SeqId: 1, ParentSeqId: 0, FirstSeqId: 0, ChunkStart: 0},
+				{Data: []byte("\n| Name | Type | Required | Description |\n|------|------|----------|-------------|\n| 1    | 1    | 1        | 1           |\n| 2    | 2    | 2        | 2           |\n"),
+					ChunkType: east.KindTable, Length: 165, SeqId: 2, ParentSeqId: 1, FirstSeqId: 2, ChunkStart: 11},
+				{Data: []byte("| 3    | 3    | 3        | 3           |\n"), ChunkType: east.KindTable, Length: 41, SeqId: 3, ParentSeqId: 1, FirstSeqId: 2, ChunkStart: 176},
+				{Data: []byte("\n| Name | Type | Required | Description |\n|------|------|----------|-------------|\n| 1    | 1    | 1        | 1           |\n| 2    | 2    | 2        | 2           |\n"),
+					ChunkType: east.KindTable, Length: 165, SeqId: 4, ParentSeqId: 1, FirstSeqId: 2, ChunkStart: 217},
+				{Data: []byte("## distroy line\n"), ChunkType: ast.KindHeading, Length: 16, SeqId: 5, ParentSeqId: 1, FirstSeqId: 0, ChunkStart: 382},
+				{Data: []byte("| 3    | 3    | 3        | 3           |"), ChunkType: ast.KindParagraph, Length: 40, SeqId: 6, ParentSeqId: 5, FirstSeqId: 0, ChunkStart: 398},
 			}
 
 			var result []parser.Chunk
@@ -91,7 +91,7 @@ func TestMarkdownChunker(t *testing.T) {
 				if err == io.EOF {
 					break
 				}
-				result = append(result, chunk)
+				result = append(result, *chunk)
 			}
 			convey.So(result, convey.ShouldEqual, expectResult)
 		})
@@ -104,11 +104,11 @@ func TestMarkdownChunker(t *testing.T) {
 			size := info.Size()
 			chunkReader := chunker.NewChunkReader(ctx, file, int(size), 100, 4096)
 			expectResult := []parser.Chunk{
-				{[]byte("# heading1\n"), ast.KindHeading, 11, 1, 0, 0, 0},
-				{[]byte("\n| Name | Type | Required | Description |\n|------|------|----------|-------------|\n"),
-					east.KindTable, 83, 2, 1, 2, 11},
-				{[]byte("| 1    | 1    | 1        | 1           |"),
-					east.KindTable, 40, 3, 1, 2, 94},
+				{Data: []byte("# heading1\n"), ChunkType: ast.KindHeading, Length: 11, SeqId: 1, ParentSeqId: 0, FirstSeqId: 0, ChunkStart: 0},
+				{Data: []byte("\n| Name | Type | Required | Description |\n|------|------|----------|-------------|\n"),
+					ChunkType: east.KindTable, Length: 83, SeqId: 2, ParentSeqId: 1, FirstSeqId: 2, ChunkStart: 11},
+				{Data: []byte("| 1    | 1    | 1        | 1           |"),
+					ChunkType: east.KindTable, Length: 40, SeqId: 3, ParentSeqId: 1, FirstSeqId: 2, ChunkStart: 94},
 			}
 
 			var result []parser.Chunk
@@ -117,7 +117,7 @@ func TestMarkdownChunker(t *testing.T) {
 				if err == io.EOF {
 					break
 				}
-				result = append(result, chunk)
+				result = append(result, *chunk)
 			}
 			convey.So(result, convey.ShouldEqual, expectResult)
 		})
@@ -130,13 +130,13 @@ func TestMarkdownChunker(t *testing.T) {
 			size := info.Size()
 			chunkReader := chunker.NewChunkReader(ctx, file, int(size), 80, 4096)
 			expectResult := []parser.Chunk{
-				{[]byte("# heading1\n"), ast.KindHeading, 11, 1, 0, 0, 0},
-				{[]byte("\n| Name | Type | Required | Description |\n"),
-					ast.KindParagraph, 42, 2, 1, 2, 11},
-				{[]byte("|------|------|----------|-------------|\n"),
-					ast.KindParagraph, 41, 3, 1, 2, 53},
-				{[]byte("| 1    | 1    | 1        | 1           |"),
-					ast.KindParagraph, 40, 4, 1, 2, 94},
+				{Data: []byte("# heading1\n"), ChunkType: ast.KindHeading, Length: 11, SeqId: 1, ParentSeqId: 0, FirstSeqId: 0, ChunkStart: 0},
+				{Data: []byte("\n| Name | Type | Required | Description |\n"),
+					ChunkType: ast.KindParagraph, Length: 42, SeqId: 2, ParentSeqId: 1, FirstSeqId: 2, ChunkStart: 11},
+				{Data: []byte("|------|------|----------|-------------|\n"),
+					ChunkType: ast.KindParagraph, Length: 41, SeqId: 3, ParentSeqId: 1, FirstSeqId: 2, ChunkStart: 53},
+				{Data: []byte("| 1    | 1    | 1        | 1           |"),
+					ChunkType: ast.KindParagraph, Length: 40, SeqId: 4, ParentSeqId: 1, FirstSeqId: 2, ChunkStart: 94},
 			}
 
 			var result []parser.Chunk
@@ -145,7 +145,7 @@ func TestMarkdownChunker(t *testing.T) {
 				if err == io.EOF {
 					break
 				}
-				result = append(result, chunk)
+				result = append(result, *chunk)
 			}
 			convey.So(result, convey.ShouldEqual, expectResult)
 		})
@@ -158,11 +158,11 @@ func TestMarkdownChunker(t *testing.T) {
 			size := info.Size()
 			chunkReader := chunker.NewChunkReader(ctx, file, int(size), 20, 4096)
 			expectResult := []parser.Chunk{
-				{[]byte("# heading1\n"), ast.KindHeading, 11, 1, 0, 0, 0},
-				{[]byte("\n```go\naaaa\n"), ast.KindFencedCodeBlock, 12, 2, 1, 2, 11},
-				{[]byte("bbbbbbbbbb.\n"), ast.KindFencedCodeBlock, 12, 3, 1, 2, 23},
-				{[]byte("cccccccccc.\nddd\n```\n"), ast.KindFencedCodeBlock, 20, 4, 1, 2, 35},
-				{[]byte("# heading2\n"), ast.KindHeading, 11, 5, 0, 0, 55},
+				{Data: []byte("# heading1\n"), ChunkType: ast.KindHeading, Length: 11, SeqId: 1, ParentSeqId: 0, FirstSeqId: 0, ChunkStart: 0},
+				{Data: []byte("\n```go\naaaa\n"), ChunkType: ast.KindFencedCodeBlock, Length: 12, SeqId: 2, ParentSeqId: 1, FirstSeqId: 2, ChunkStart: 11},
+				{Data: []byte("bbbbbbbbbb.\n"), ChunkType: ast.KindFencedCodeBlock, Length: 12, SeqId: 3, ParentSeqId: 1, FirstSeqId: 2, ChunkStart: 23},
+				{Data: []byte("cccccccccc.\nddd\n```\n"), ChunkType: ast.KindFencedCodeBlock, Length: 20, SeqId: 4, ParentSeqId: 1, FirstSeqId: 2, ChunkStart: 35},
+				{Data: []byte("# heading2\n"), ChunkType: ast.KindHeading, Length: 11, SeqId: 5, ParentSeqId: 0, FirstSeqId: 0, ChunkStart: 55},
 			}
 
 			var result []parser.Chunk
@@ -171,7 +171,7 @@ func TestMarkdownChunker(t *testing.T) {
 				if err == io.EOF {
 					break
 				}
-				result = append(result, chunk)
+				result = append(result, *chunk)
 			}
 			convey.So(result, convey.ShouldEqual, expectResult)
 		})
@@ -184,9 +184,9 @@ func TestMarkdownChunker(t *testing.T) {
 			size := info.Size()
 			chunkReader := chunker.NewChunkReader(ctx, file, int(size), 20, 4096)
 			expectResult := []parser.Chunk{
-				{[]byte("- aaaa\n- bbbb\n"), ast.KindListItem, 7, 1, 0, 1, 0},
-				{[]byte("- cccccccccc.\n"), ast.KindListItem, 14, 2, 0, 1, 14},
-				{[]byte("- dddddddddd."), ast.KindList, 13, 3, 0, 1, 28},
+				{Data: []byte("- aaaa\n- bbbb\n"), ChunkType: ast.KindListItem, Length: 7, SeqId: 1, ParentSeqId: 0, FirstSeqId: 1, ChunkStart: 0},
+				{Data: []byte("- cccccccccc.\n"), ChunkType: ast.KindListItem, Length: 14, SeqId: 2, ParentSeqId: 0, FirstSeqId: 1, ChunkStart: 14},
+				{Data: []byte("- dddddddddd."), ChunkType: ast.KindList, Length: 13, SeqId: 3, ParentSeqId: 0, FirstSeqId: 1, ChunkStart: 28},
 			}
 
 			var result []parser.Chunk
@@ -195,7 +195,7 @@ func TestMarkdownChunker(t *testing.T) {
 				if err == io.EOF {
 					break
 				}
-				result = append(result, chunk)
+				result = append(result, *chunk)
 			}
 			convey.So(result, convey.ShouldEqual, expectResult)
 		})
@@ -208,14 +208,14 @@ func TestMarkdownChunker(t *testing.T) {
 			size := info.Size()
 			chunkReader := chunker.NewChunkReader(ctx, file, int(size), 200, 300)
 			expectResult := []parser.Chunk{
-				{[]byte("# heading1\n"), ast.KindHeading, 11, 1, 0, 0, 0},
-				{[]byte("\n| Name | Type | Required | Description |\n|------|------|----------|-------------|\n| 1    | 1    | 1        | 1           |\n| 2    | 2    | 2        | 2           |\n"),
-					east.KindTable, 165, 2, 1, 2, 11},
-				{[]byte("| 3    | 3    | 3        | 3           |\n"), east.KindTable, 41, 3, 1, 2, 176},
-				{[]byte("\n| Name | Type | Required | Description |\n|------|------|----------|-------------|\n| 1    | 1    | 1        | 1           |\n| 2    | 2    | 2        | 2           |\n"),
-					east.KindTable, 165, 4, 1, 2, 217},
-				{[]byte("## distroy line\n"), ast.KindHeading, 16, 5, 1, 0, 382},
-				{[]byte("| 3    | 3    | 3        | 3           |"), ast.KindParagraph, 40, 6, 5, 0, 398},
+				{Data: []byte("# heading1\n"), ChunkType: ast.KindHeading, Length: 11, SeqId: 1, ParentSeqId: 0, FirstSeqId: 0, ChunkStart: 0},
+				{Data: []byte("\n| Name | Type | Required | Description |\n|------|------|----------|-------------|\n| 1    | 1    | 1        | 1           |\n| 2    | 2    | 2        | 2           |\n"),
+					ChunkType: east.KindTable, Length: 165, SeqId: 2, ParentSeqId: 1, FirstSeqId: 2, ChunkStart: 11},
+				{Data: []byte("| 3    | 3    | 3        | 3           |\n"), ChunkType: east.KindTable, Length: 41, SeqId: 3, ParentSeqId: 1, FirstSeqId: 2, ChunkStart: 176},
+				{Data: []byte("\n| Name | Type | Required | Description |\n|------|------|----------|-------------|\n| 1    | 1    | 1        | 1           |\n| 2    | 2    | 2        | 2           |\n"),
+					ChunkType: east.KindTable, Length: 165, SeqId: 4, ParentSeqId: 1, FirstSeqId: 2, ChunkStart: 217},
+				{Data: []byte("## distroy line\n"), ChunkType: ast.KindHeading, Length: 16, SeqId: 5, ParentSeqId: 1, FirstSeqId: 0, ChunkStart: 382},
+				{Data: []byte("| 3    | 3    | 3        | 3           |"), ChunkType: ast.KindParagraph, Length: 40, SeqId: 6, ParentSeqId: 5, FirstSeqId: 0, ChunkStart: 398},
 			}
 
 			var result []parser.Chunk
@@ -224,7 +224,7 @@ func TestMarkdownChunker(t *testing.T) {
 				if err == io.EOF {
 					break
 				}
-				result = append(result, chunk)
+				result = append(result, *chunk)
 			}
 			convey.So(result, convey.ShouldEqual, expectResult)
 		})

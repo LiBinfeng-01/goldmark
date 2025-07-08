@@ -15,7 +15,7 @@ import (
 func DefaultParser() parser.Parser {
 	return parser.NewParser(parser.WithBlockParsers(parser.DefaultBlockParsers()...),
 		parser.WithInlineParsers(parser.DefaultInlineParsers()...),
-		parser.WithParagraphTransformers(parser.DefaultParagraphTransformers()...),
+		//parser.WithParagraphTransformers(parser.DefaultParagraphTransformers()...),
 	)
 }
 

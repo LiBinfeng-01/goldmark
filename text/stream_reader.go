@@ -171,11 +171,10 @@ func (r *streamReader) AdvanceToEOL() {
 	r.pos.Padding = 0
 }
 
+var targetPuncts = []rune{'。', '.', '？', '?', '!', ';', ':', '，', ',', ' '}
+
 // 按优先级查找最后一个标点的字节下标（从后往前扫描）
 func findLastPunctuationIndex(data []byte) int {
-	// 定义优先级顺序：句号(中英文) > 问号 > 逗号 > 空格
-	targetPuncts := []rune{'。', '.', '？', '?', '，', ',', ' '}
-
 	for i := len(data) - 1; i >= 0; {
 		// 跳过非UTF-8首字节（如中文的第2/3字节）
 		if !utf8.RuneStart(data[i]) {
@@ -248,15 +247,14 @@ func (r *streamReader) AdvanceLine() {
 			return
 		}
 		// copy rest of old buffer to nextBuffer
-		nextBufferBegin := make([]byte, r.bufferSize-(r.consumeOffset-r.bufferOffset))
-		copy(nextBufferBegin, r.buffer[r.consumeOffset-r.bufferOffset:r.bufferSize])
-		nextBufferEnd := make([]byte, r.consumeOffset-r.bufferOffset)
+		nextBuffer := make([]byte, r.bufferSize)
+		lastReserveIndex := r.consumeOffset - r.bufferOffset
+		copy(nextBuffer[:r.bufferSize-lastReserveIndex], r.buffer[lastReserveIndex:r.bufferSize])
 
-		n, err := r.input.ReadAt(nextBufferEnd, int64(r.bufferSize+r.bufferOffset))
+		_, err := r.input.ReadAt(nextBuffer[r.bufferSize-lastReserveIndex:], int64(r.bufferSize+r.bufferOffset))
 		if err == io.EOF {
 			r.readEOF = true
 		}
-		nextBuffer := append(nextBufferBegin, nextBufferEnd[0:n]...)
 		r.bufferOffset = r.consumeOffset
 		r.buffer = nextBuffer
 		nextIdx := bytes.IndexByte(r.buffer[r.pos.Start-r.bufferOffset:], '\n')
@@ -303,15 +301,6 @@ func (r *streamReader) FindSubMatch(reg *regexp.Regexp) [][]byte {
 
 func (r *streamReader) GetRange(start int, stop int) []byte {
 	result := []byte{}
-	// when it is List type, it could be out of fileSize range
-	// example:
-	//        - ListItem1            =>            [ListStart&ListItem1Start]- ListItem1[ListItem1Stop]
-	//        - ListItem2                          - ListItem2[ListStop]
-	// then the whole list may pop after ListItem1 was pop, but the length of list should not be the whole list
-	// here ListStop - ListStart + ListItem1Stop > fileSize
-	//if stop > r.fileSize {
-	//	stop = r.fileSize
-	//}
 	if start >= 0 && stop <= r.fileSize {
 		result = r.buffer[start-r.bufferOffset : stop-r.bufferOffset]
 	}

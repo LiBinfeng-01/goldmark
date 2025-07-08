@@ -17,7 +17,7 @@ type chunkReader struct {
 	chunkSize  int
 	bufferSize int
 	hasInit    bool
-	chunkChan  chan parser.Chunk
+	chunkChan  chan *parser.Chunk
 }
 
 func NewChunkReader(ctx context.Context, input io.ReaderAt, fileSize int, chunkSize int, bufferSize int) *chunkReader {
@@ -31,15 +31,15 @@ func NewChunkReader(ctx context.Context, input io.ReaderAt, fileSize int, chunkS
 	}
 }
 
-func (c *chunkReader) NextChunk() (parser.Chunk, error) {
+func (c *chunkReader) NextChunk() (*parser.Chunk, error) {
 	if c.ctx.Done() != nil {
-		return parser.Chunk{}, io.EOF
+		return &parser.Chunk{}, io.EOF
 	}
 	if !c.hasInit {
 		c.hasInit = true
 		reader, _ := text.NewStreamReader(c.input, int64(c.fileSize), c.bufferSize)
 		root := ast.NewDocument()
-		c.chunkChan = make(chan parser.Chunk, 0)
+		c.chunkChan = make(chan *parser.Chunk, 0)
 		ctx := parser.NewContextForChunk(parser.Block{root, nil, 0, 0, []byte{}}, c.chunkChan, c.chunkSize)
 		ctx.SetCurrentLevel(1)
 		ctx.SetOpenedBlocks(nil)
@@ -56,7 +56,7 @@ func (c *chunkReader) NextChunk() (parser.Chunk, error) {
 	}
 	chunk, ok := <-c.chunkChan
 	if !ok {
-		return parser.Chunk{}, io.EOF
+		return &parser.Chunk{}, io.EOF
 	}
 	return chunk, nil
 }

@@ -228,11 +228,9 @@ type Context interface {
 
 	SetCurrentLevel(level int)
 
-	PushToChannel(chunk Chunk)
+	PushToChannel(chunk *Chunk)
 
 	CloseChannel()
-
-	PopFromChannel() Chunk
 
 	TranslateBlock() *Block
 
@@ -282,7 +280,7 @@ type parseContext struct {
 	sizeLimit      int
 	currentSize    int
 	currentLevel   int
-	chunkChan      chan Chunk
+	chunkChan      chan *Chunk
 	translateBlock *Block
 	lastCloseBlock *Block
 	lastChunk      *Chunk
@@ -334,7 +332,7 @@ func (s *mySeqIDs) GenerateIntID() int {
 }
 
 // NewContextForChunk returns a new Context.
-func NewContextForChunk(root Block, chunkChan chan Chunk, sizeLimit int, options ...ContextOption) Context {
+func NewContextForChunk(root Block, chunkChan chan *Chunk, sizeLimit int, options ...ContextOption) Context {
 	cfg := &ContextConfig{
 		IDs: newSeqIDs(),
 	}
@@ -387,16 +385,12 @@ func (p *parseContext) SetCurrentLevel(level int) {
 	p.currentLevel = level
 }
 
-func (p *parseContext) PushToChannel(chunk Chunk) {
+func (p *parseContext) PushToChannel(chunk *Chunk) {
 	p.chunkChan <- chunk
 }
 
 func (p *parseContext) CloseChannel() {
 	close(p.chunkChan)
-}
-
-func (p *parseContext) PopFromChannel() Chunk {
-	return <-p.chunkChan
 }
 
 func (p *parseContext) TranslateBlock() *Block {
@@ -1146,7 +1140,7 @@ func (p *parser) PushChunks(reader text.Reader, opts ...ParseOption) {
 	}
 	pc := c.Context
 	root := pc.Root().Node
-	rootChunk := Chunk{[]byte{}, ast.KindDocument, 0, 0, 0, 0, 0}
+	rootChunk := Chunk{Data: []byte{}, ChunkType: ast.KindDocument, Length: 0, SeqId: 0, ParentSeqId: 0, FirstSeqId: 0, ChunkStart: 0}
 	pc.Node2SeqID()[&rootChunk] = 0
 	p.parseBlocks(root, reader, pc)
 }
@@ -1188,43 +1182,40 @@ func (p *parser) mergeBlocks(from, to int, reader text.Reader, pc Context) {
 	resultStart := reader.ConsumeOffset()
 	reader.SetConsumeOffset(resultStop)
 	currentLength := resultStop - resultStart
-	LastChunk := pc.LastChunk()
+	lastChunk := pc.LastChunk()
 	node := blocks[to].Node
-	if LastChunk != nil && LastChunk.Length+currentLength < pc.SizeLimit() &&
-		LastChunk.ChunkType != ast.KindHeading && !ast.IsHeading(node) && LastChunk.ChunkType == node.Kind() {
-		pc.LastChunk().Data = reader.GetRange(pc.LastChunk().ChunkStart, resultStop)
+	if lastChunk != nil && lastChunk.Length+currentLength < pc.SizeLimit() &&
+		lastChunk.ChunkType != ast.KindHeading && !ast.IsHeading(node) && isSameKind(lastChunk.ChunkType, node.Kind()) {
+		lastChunk.Data = reader.GetRange(lastChunk.ChunkStart, resultStop)
 		return
 	}
 	// combine them together and generate id for chunk, get one block as the represent of chunk
 	seqId := pc.IDs().GenerateIntID()
 	firstSeqId := 0
 	lastSeqId := seqId - 1
-	if pc.LastChunk() != nil && isSameKind(pc.LastChunk().ChunkType, node.Kind()) && pc.LastChunk().SeqId == lastSeqId {
-		if pc.LastChunk().FirstSeqId == 0 {
-			pc.LastChunk().FirstSeqId = pc.LastChunk().SeqId
+	if lastChunk != nil && isSameKind(lastChunk.ChunkType, node.Kind()) && lastChunk.SeqId == lastSeqId {
+		if lastChunk.FirstSeqId == 0 {
+			lastChunk.FirstSeqId = lastChunk.SeqId
 		}
-		firstSeqId = pc.LastChunk().FirstSeqId
+		firstSeqId = lastChunk.FirstSeqId
 	}
-	if LastChunk != nil {
-		pc.PushToChannel(*pc.LastChunk())
+	if lastChunk != nil {
+		pc.PushToChannel(lastChunk)
 		pc.SetLastChunk(nil)
 	}
 	parentSeqId := 0
+	chunk := Chunk{Data: reader.GetRange(resultStart, resultStop), ChunkType: node.Kind(), Length: resultStop - resultStart,
+		SeqId: seqId, ParentSeqId: parentSeqId, FirstSeqId: firstSeqId, ChunkStart: resultStart}
 	if ast.IsHeading(node) {
 		level := node.(*ast.Heading).Level
 		parentNode := pc.Level2Node()[level-1]
-		parentSeqId = pc.Node2SeqID()[parentNode]
+		chunk.ParentSeqId = pc.Node2SeqID()[parentNode]
+		pc.Level2Node()[level] = &chunk
+		pc.SetCurrentLevel(level)
 	} else if ast.IsListItem(node) || ast.IsFencedCodeBlock(node) || east.KindTable == node.Kind() || ast.IsParagraph(node) || ast.IsBlockquote(node) || ast.IsList(node) || ast.IsBlockquote(node) {
 		level := pc.CurrentLevel()
 		parentNode := pc.Level2Node()[level]
-		parentSeqId = pc.Node2SeqID()[parentNode]
-	}
-	chunk := Chunk{reader.GetRange(resultStart, resultStop), node.Kind(), resultStop - resultStart,
-		seqId, parentSeqId, firstSeqId, resultStart}
-	if ast.IsHeading(node) {
-		level := node.(*ast.Heading).Level
-		pc.Level2Node()[level] = &chunk
-		pc.SetCurrentLevel(level)
+		chunk.ParentSeqId = pc.Node2SeqID()[parentNode]
 	}
 	pc.Node2SeqID()[&chunk] = seqId
 	pc.SetLastCloseBlock(&blocks[from])
@@ -1247,7 +1238,7 @@ func (p *parser) closeBlocks(from, to int, reader text.Reader, pc Context) {
 	p.mergeBlocks(from, to, reader, pc)
 	if reader.HasAllConsumed() {
 		if pc.LastChunk() != nil {
-			pc.PushToChannel(*pc.LastChunk())
+			pc.PushToChannel(pc.LastChunk())
 			pc.SetLastChunk(nil)
 		}
 		pc.CloseChannel()
