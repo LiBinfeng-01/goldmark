@@ -73,7 +73,7 @@ func (b *setextHeadingParser) Open(parent ast.Node, reader text.Reader, pc Conte
 	return node, NoChildren | RequireParagraph
 }
 
-func (b *setextHeadingParser) Continue(node ast.Node, reader text.Reader, pc Context) State {
+func (b *setextHeadingParser) Continue(block *Block, reader text.Reader, pc Context) State {
 	return Close
 }
 
@@ -85,7 +85,7 @@ func (b *setextHeadingParser) Close(node ast.Node, reader text.Reader, pc Contex
 	pc.Set(temporaryParagraphKey, nil)
 	if tmp.Lines().Len() == 0 {
 		next := heading.NextSibling()
-		segment = segment.TrimLeftSpace(reader.Source())
+		segment = segment.TrimLeftSpace(reader)
 		if next == nil || !ast.IsParagraph(next) {
 			para := ast.NewParagraph()
 			para.Lines().Append(segment)

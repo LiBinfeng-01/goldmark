@@ -162,7 +162,8 @@ func (b *listParser) Open(parent ast.Node, reader text.Reader, pc Context) (ast.
 	return node, HasChildren
 }
 
-func (b *listParser) Continue(node ast.Node, reader text.Reader, pc Context) State {
+func (b *listParser) Continue(block *Block, reader text.Reader, pc Context) State {
+	node := block.Node
 	list := node.(*ast.List)
 	line, _ := reader.PeekLine()
 	if util.IsBlank(line) {

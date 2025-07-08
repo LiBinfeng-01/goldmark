@@ -42,10 +42,11 @@ func (b *codeBlockParser) Open(parent ast.Node, reader text.Reader, pc Context) 
 
 }
 
-func (b *codeBlockParser) Continue(node ast.Node, reader text.Reader, pc Context) State {
+func (b *codeBlockParser) Continue(block *Block, reader text.Reader, pc Context) State {
+	node := block.Node
 	line, segment := reader.PeekLine()
 	if util.IsBlank(line) {
-		node.Lines().Append(segment.TrimLeftSpaceWidth(4, reader.Source()))
+		node.Lines().Append(segment.TrimLeftSpaceWidth(4, reader))
 		return Continue | NoChildren
 	}
 	pos, padding := util.IndentPosition(line, reader.LineOffset(), 4)
@@ -70,10 +71,9 @@ func (b *codeBlockParser) Close(node ast.Node, reader text.Reader, pc Context) {
 	// trim trailing blank lines
 	lines := node.Lines()
 	length := lines.Len() - 1
-	source := reader.Source()
 	for length >= 0 {
 		line := lines.At(length)
-		if util.IsBlank(line.Value(source)) {
+		if util.IsBlank(line.Value(reader)) {
 			length--
 		} else {
 			break

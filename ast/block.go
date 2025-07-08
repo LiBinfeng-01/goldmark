@@ -127,13 +127,6 @@ func (n *TextBlock) Kind() NodeKind {
 	return KindTextBlock
 }
 
-// Text implements Node.Text.
-//
-// Deprecated: Use other properties of the node to get the text value(i.e. TextBlock.Lines).
-func (n *TextBlock) Text(source []byte) []byte {
-	return n.Lines().Value(source)
-}
-
 // NewTextBlock returns a new TextBlock node.
 func NewTextBlock() *TextBlock {
 	return &TextBlock{
@@ -159,13 +152,6 @@ func (n *Paragraph) Kind() NodeKind {
 	return KindParagraph
 }
 
-// Text implements Node.Text.
-//
-// Deprecated: Use other properties of the node to get the text value(i.e. Paragraph.Lines).
-func (n *Paragraph) Text(source []byte) []byte {
-	return n.Lines().Value(source)
-}
-
 // NewParagraph returns a new Paragraph node.
 func NewParagraph() *Paragraph {
 	return &Paragraph{
@@ -186,6 +172,13 @@ type Heading struct {
 	// Level returns a level of this heading.
 	// This value is between 1 and 6.
 	Level int
+}
+
+// IsHeading returns true if the given node implements the Paragraph interface,
+// otherwise false.
+func IsHeading(node Node) bool {
+	_, ok := node.(*Heading)
+	return ok
 }
 
 // Dump implements Node.Dump .
@@ -260,13 +253,6 @@ func (n *CodeBlock) Kind() NodeKind {
 	return KindCodeBlock
 }
 
-// Text implements Node.Text.
-//
-// Deprecated: Use other properties of the node to get the text value(i.e. CodeBlock.Lines).
-func (n *CodeBlock) Text(source []byte) []byte {
-	return n.Lines().Value(source)
-}
-
 // NewCodeBlock returns a new CodeBlock node.
 func NewCodeBlock() *CodeBlock {
 	return &CodeBlock{
@@ -288,7 +274,7 @@ type FencedCodeBlock struct {
 func (n *FencedCodeBlock) Language(source []byte) []byte {
 	if n.language == nil && n.Info != nil {
 		segment := n.Info.Segment
-		info := segment.Value(source)
+		info := segment.Value(nil)
 		i := 0
 		for ; i < len(info); i++ {
 			if info[i] == ' ' {
@@ -309,7 +295,7 @@ func (n *FencedCodeBlock) IsRaw() bool {
 func (n *FencedCodeBlock) Dump(source []byte, level int) {
 	m := map[string]string{}
 	if n.Info != nil {
-		m["Info"] = fmt.Sprintf("\"%s\"", n.Info.Text(source))
+		m["Info"] = fmt.Sprintf("\"\"")
 	}
 	DumpHelper(n, source, level, m, nil)
 }
@@ -322,19 +308,19 @@ func (n *FencedCodeBlock) Kind() NodeKind {
 	return KindFencedCodeBlock
 }
 
-// Text implements Node.Text.
-//
-// Deprecated: Use other properties of the node to get the text value(i.e. FencedCodeBlock.Lines).
-func (n *FencedCodeBlock) Text(source []byte) []byte {
-	return n.Lines().Value(source)
-}
-
 // NewFencedCodeBlock return a new FencedCodeBlock node.
 func NewFencedCodeBlock(info *Text) *FencedCodeBlock {
 	return &FencedCodeBlock{
 		BaseBlock: BaseBlock{},
 		Info:      info,
 	}
+}
+
+// IsFencedCodeBlock returns true if the given node implements the FencedCodeBlock interface,
+// otherwise false.
+func IsFencedCodeBlock(node Node) bool {
+	_, ok := node.(*FencedCodeBlock)
+	return ok
 }
 
 // A Blockquote struct represents an blockquote block of Markdown text.
@@ -360,6 +346,13 @@ func NewBlockquote() *Blockquote {
 	return &Blockquote{
 		BaseBlock: BaseBlock{},
 	}
+}
+
+// IsBlockquote returns true if the given node implements the Blockquote interface,
+// otherwise false.
+func IsBlockquote(node Node) bool {
+	_, ok := node.(*Blockquote)
+	return ok
 }
 
 // A List struct represents a list of Markdown text.
@@ -419,6 +412,13 @@ func NewList(marker byte) *List {
 	}
 }
 
+// IsList returns true if the given node implements the List interface,
+// otherwise false.
+func IsList(node Node) bool {
+	_, ok := node.(*List)
+	return ok
+}
+
 // A ListItem struct represents a list item of Markdown text.
 type ListItem struct {
 	BaseBlock
@@ -449,6 +449,13 @@ func NewListItem(offset int) *ListItem {
 		BaseBlock: BaseBlock{},
 		Offset:    offset,
 	}
+}
+
+// IsListItem returns true if the given node implements the ListItem interface,
+// otherwise false.
+func IsListItem(node Node) bool {
+	_, ok := node.(*ListItem)
+	return ok
 }
 
 // HTMLBlockType represents kinds of an html blocks.
@@ -509,8 +516,7 @@ func (n *HTMLBlock) Dump(source []byte, level int) {
 		c.Dump(source, level+1)
 	}
 	if n.HasClosure() {
-		cl := n.ClosureLine
-		fmt.Printf("%sClosure: \"%s\"\n", indent2, string(cl.Value(source)))
+		fmt.Printf("%sClosure: \"\"\n", indent2)
 	}
 	fmt.Printf("%sHasBlankPreviousLines: %v\n", indent2, n.HasBlankPreviousLines())
 	fmt.Printf("%s}\n", indent)
@@ -522,17 +528,6 @@ var KindHTMLBlock = NewNodeKind("HTMLBlock")
 // Kind implements Node.Kind.
 func (n *HTMLBlock) Kind() NodeKind {
 	return KindHTMLBlock
-}
-
-// Text implements Node.Text.
-//
-// Deprecated: Use other properties of the node to get the text value(i.e. HTMLBlock.Lines).
-func (n *HTMLBlock) Text(source []byte) []byte {
-	ret := n.Lines().Value(source)
-	if n.HasClosure() {
-		ret = append(ret, n.ClosureLine.Value(source)...)
-	}
-	return ret
 }
 
 // NewHTMLBlock returns a new HTMLBlock node.

@@ -79,6 +79,16 @@ type Reader interface {
 
 	// FindClosure finds corresponding closure.
 	FindClosure(opener, closer byte, options FindClosureOptions) (*Segments, bool)
+
+	GetRange(start int, stop int) []byte
+
+	Buffer() []byte
+
+	ConsumeOffset() int
+
+	SetConsumeOffset(consumeOffset int)
+
+	HasAllConsumed() bool
 }
 
 // FindClosureOptions is options for Reader.FindClosure.
@@ -136,7 +146,7 @@ func (r *reader) Source() []byte {
 }
 
 func (r *reader) Value(seg Segment) []byte {
-	return seg.Value(r.source)
+	return seg.Value(r)
 }
 
 func (r *reader) Peek() byte {
@@ -152,7 +162,7 @@ func (r *reader) Peek() byte {
 func (r *reader) PeekLine() ([]byte, Segment) {
 	if r.pos.Start >= 0 && r.pos.Start < r.sourceLength {
 		if r.peekedLine == nil {
-			r.peekedLine = r.pos.Value(r.Source())
+			r.peekedLine = r.pos.Value(r)
 		}
 		return r.peekedLine, r.pos
 	}
@@ -300,6 +310,25 @@ func (r *reader) FindSubMatch(reg *regexp.Regexp) [][]byte {
 	return findSubMatchReader(r, reg)
 }
 
+func (r *reader) GetRange(start int, stop int) []byte {
+	return r.source[start:stop]
+}
+
+func (r *reader) Buffer() []byte {
+	return r.source
+}
+
+func (r *reader) ConsumeOffset() int {
+	return r.pos.Start
+}
+
+func (r *reader) SetConsumeOffset(consumeOffset int) {
+}
+
+func (r *reader) HasAllConsumed() bool {
+	return false
+}
+
 // A BlockReader interface is a reader that is optimized for Blocks.
 type BlockReader interface {
 	Reader
@@ -441,7 +470,7 @@ func (r *blockReader) Peek() byte {
 
 func (r *blockReader) PeekLine() ([]byte, Segment) {
 	if r.line < r.segmentsLength && r.pos.Start >= 0 && r.pos.Start < r.last {
-		return r.pos.Value(r.source), r.pos
+		return r.pos.Value(r), r.pos
 	}
 	return nil, r.pos
 }
@@ -531,6 +560,25 @@ func (r *blockReader) Match(reg *regexp.Regexp) bool {
 
 func (r *blockReader) FindSubMatch(reg *regexp.Regexp) [][]byte {
 	return findSubMatchReader(r, reg)
+}
+
+func (r *blockReader) GetRange(start int, stop int) []byte {
+	return r.source[start:stop]
+}
+
+func (r *blockReader) Buffer() []byte {
+	return r.source
+}
+
+func (r *blockReader) ConsumeOffset() int {
+	return r.pos.Start
+}
+
+func (r *blockReader) SetConsumeOffset(consumeOffset int) {
+}
+
+func (r *blockReader) HasAllConsumed() bool {
+	return false
 }
 
 func skipBlankLinesReader(r Reader) (Segment, int, bool) {

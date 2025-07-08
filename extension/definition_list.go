@@ -71,7 +71,8 @@ func (b *definitionListParser) Open(parent gast.Node, reader text.Reader, pc par
 	return list, status
 }
 
-func (b *definitionListParser) Continue(node gast.Node, reader text.Reader, pc parser.Context) parser.State {
+func (b *definitionListParser) Continue(block *parser.Block, reader text.Reader, pc parser.Context) parser.State {
+	node := block.Node
 	line, _ := reader.PeekLine()
 	if util.IsBlank(line) {
 		return parser.Continue | parser.HasChildren
@@ -133,7 +134,7 @@ func (b *definitionDescriptionParser) Open(
 		for i := 0; i < l; i++ {
 			term := ast.NewDefinitionTerm()
 			segment := lines.At(i)
-			term.Lines().Append(segment.TrimRightSpace(reader.Source()))
+			term.Lines().Append(segment.TrimRightSpace(reader))
 			list.AppendChild(list, term)
 		}
 		para.Parent().RemoveChild(para.Parent(), para)
@@ -144,7 +145,7 @@ func (b *definitionDescriptionParser) Open(
 	return ast.NewDefinitionDescription(), parser.HasChildren
 }
 
-func (b *definitionDescriptionParser) Continue(node gast.Node, reader text.Reader, pc parser.Context) parser.State {
+func (b *definitionDescriptionParser) Continue(block *parser.Block, reader text.Reader, pc parser.Context) parser.State {
 	// definitionListParser detects end of the description.
 	// so this method will never be called.
 	return parser.Continue | parser.HasChildren
