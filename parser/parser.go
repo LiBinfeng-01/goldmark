@@ -339,8 +339,6 @@ func NewContextForChunk(root Block, chunkChan chan *Chunk, sizeLimit int, option
 	for _, option := range options {
 		option(cfg)
 	}
-	blankLines := make([]lineStat, 0, 128)
-	blankLines = blankLines[0:0]
 
 	return &parseContext{
 		store:         make([]interface{}, ContextKeyMax+1),
@@ -1223,7 +1221,6 @@ func (p *parser) mergeBlocks(from, to int, reader text.Reader, pc Context) {
 	pc.Node2SeqID()[&chunk] = seqId
 	pc.SetLastCloseBlock(&blocks[from])
 	pc.SetLastChunk(&chunk)
-	return
 }
 
 func (p *parser) closeBlocks(from, to int, reader text.Reader, pc Context) {
