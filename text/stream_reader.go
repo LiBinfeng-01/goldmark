@@ -173,7 +173,7 @@ func (r *streamReader) AdvanceToEOL() {
 
 var targetPuncts = []rune{'。', '.', '？', '?', '!', ';', ':', '，', ',', ' '}
 
-// 按优先级查找最后一个标点的字节下标（从后往前扫描）
+// 按优先级查找最后一个标点的字节下标（从后往前扫描).
 func findLastPunctuationIndex(data []byte) int {
 	for i := len(data) - 1; i >= 0; {
 		// 跳过非UTF-8首字节（如中文的第2/3字节）
@@ -250,7 +250,6 @@ func (r *streamReader) AdvanceLine() {
 		nextBuffer := make([]byte, r.bufferSize)
 		lastReserveIndex := r.consumeOffset - r.bufferOffset
 		copy(nextBuffer[:r.bufferSize-lastReserveIndex], r.buffer[lastReserveIndex:r.bufferSize])
-
 		_, err := r.input.ReadAt(nextBuffer[r.bufferSize-lastReserveIndex:], int64(r.bufferSize+r.bufferOffset))
 		if err == io.EOF {
 			r.readEOF = true

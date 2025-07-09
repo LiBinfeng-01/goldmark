@@ -39,8 +39,8 @@ func (c *chunkReader) NextChunk() (*parser.Chunk, error) {
 		c.hasInit = true
 		reader, _ := text.NewStreamReader(c.input, int64(c.fileSize), c.bufferSize)
 		root := ast.NewDocument()
-		c.chunkChan = make(chan *parser.Chunk, 0)
-		ctx := parser.NewContextForChunk(parser.Block{root, nil, 0, 0, []byte{}}, c.chunkChan, c.chunkSize)
+		ctx := parser.NewContextForChunk(parser.Block{Node: root, Parser: nil, Length: 0, Start: 0,
+			Buffer: []byte{}}, c.chunkChan, c.chunkSize)
 		ctx.SetCurrentLevel(1)
 		ctx.SetOpenedBlocks(nil)
 		markdown := goldmark.New(

@@ -294,9 +294,6 @@ func (n *FencedCodeBlock) IsRaw() bool {
 // Dump implements Node.Dump .
 func (n *FencedCodeBlock) Dump(source []byte, level int) {
 	m := map[string]string{}
-	if n.Info != nil {
-		m["Info"] = fmt.Sprintf("\"\"")
-	}
 	DumpHelper(n, source, level, m, nil)
 }
 

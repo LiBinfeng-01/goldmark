@@ -145,7 +145,8 @@ func (b *definitionDescriptionParser) Open(
 	return ast.NewDefinitionDescription(), parser.HasChildren
 }
 
-func (b *definitionDescriptionParser) Continue(block *parser.Block, reader text.Reader, pc parser.Context) parser.State {
+func (b *definitionDescriptionParser) Continue(block *parser.Block,
+	reader text.Reader, pc parser.Context) parser.State {
 	// definitionListParser detects end of the description.
 	// so this method will never be called.
 	return parser.Continue | parser.HasChildren

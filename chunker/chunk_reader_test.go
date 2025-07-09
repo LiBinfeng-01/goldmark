@@ -2,6 +2,7 @@ package chunker_test
 
 import (
 	"context"
+	"errors"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/chunker"
 	east "github.com/yuin/goldmark/extension/ast"
@@ -19,7 +20,7 @@ func TestMarkdownChunker(t *testing.T) {
 		convey.Convey("test chunking paragraph", func() {
 			file, err := os.Open("testdata/test_paragraph.md")
 			convey.So(err, convey.ShouldBeNil)
-			defer file.Close()
+			defer func() { err = errors.Join(err, file.Close()) }()
 			info, err := file.Stat()
 			convey.So(err, convey.ShouldBeNil)
 			size := info.Size()
@@ -43,7 +44,7 @@ func TestMarkdownChunker(t *testing.T) {
 		convey.Convey("test chunking paragraph with smaller chunk size", func() {
 			file, err := os.Open("testdata/test_paragraph.md")
 			convey.So(err, convey.ShouldBeNil)
-			defer file.Close()
+			defer func() { err = errors.Join(err, file.Close()) }()
 			info, err := file.Stat()
 			convey.So(err, convey.ShouldBeNil)
 			size := info.Size()
@@ -69,7 +70,7 @@ func TestMarkdownChunker(t *testing.T) {
 		convey.Convey("test chunking table", func() {
 			file, err := os.Open("testdata/test_table.md")
 			convey.So(err, convey.ShouldBeNil)
-			defer file.Close()
+			defer func() { err = errors.Join(err, file.Close()) }()
 			info, err := file.Stat()
 			convey.So(err, convey.ShouldBeNil)
 			size := info.Size()
@@ -98,7 +99,7 @@ func TestMarkdownChunker(t *testing.T) {
 		convey.Convey("test chunking smaller table", func() {
 			file, err := os.Open("testdata/test_smaller_table.md")
 			convey.So(err, convey.ShouldBeNil)
-			defer file.Close()
+			defer func() { err = errors.Join(err, file.Close()) }()
 			info, err := file.Stat()
 			convey.So(err, convey.ShouldBeNil)
 			size := info.Size()
@@ -124,7 +125,7 @@ func TestMarkdownChunker(t *testing.T) {
 		convey.Convey("test chunking smaller table smaller chunk", func() {
 			file, err := os.Open("testdata/test_smaller_table.md")
 			convey.So(err, convey.ShouldBeNil)
-			defer file.Close()
+			defer func() { err = errors.Join(err, file.Close()) }()
 			info, err := file.Stat()
 			convey.So(err, convey.ShouldBeNil)
 			size := info.Size()
@@ -152,7 +153,7 @@ func TestMarkdownChunker(t *testing.T) {
 		convey.Convey("test code", func() {
 			file, err := os.Open("testdata/test_code.md")
 			convey.So(err, convey.ShouldBeNil)
-			defer file.Close()
+			defer func() { err = errors.Join(err, file.Close()) }()
 			info, err := file.Stat()
 			convey.So(err, convey.ShouldBeNil)
 			size := info.Size()
@@ -178,7 +179,7 @@ func TestMarkdownChunker(t *testing.T) {
 		convey.Convey("test list", func() {
 			file, err := os.Open("testdata/test_list.md")
 			convey.So(err, convey.ShouldBeNil)
-			defer file.Close()
+			defer func() { err = errors.Join(err, file.Close()) }()
 			info, err := file.Stat()
 			convey.So(err, convey.ShouldBeNil)
 			size := info.Size()
@@ -202,7 +203,7 @@ func TestMarkdownChunker(t *testing.T) {
 		convey.Convey("test size out of one memory block", func() {
 			file, err := os.Open("testdata/test_table.md")
 			convey.So(err, convey.ShouldBeNil)
-			defer file.Close()
+			defer func() { err = errors.Join(err, file.Close()) }()
 			info, err := file.Stat()
 			convey.So(err, convey.ShouldBeNil)
 			size := info.Size()

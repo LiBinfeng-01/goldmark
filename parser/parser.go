@@ -1140,7 +1140,8 @@ func (p *parser) PushChunks(reader text.Reader, opts ...ParseOption) {
 	}
 	pc := c.Context
 	root := pc.Root().Node
-	rootChunk := Chunk{Data: []byte{}, ChunkType: ast.KindDocument, Length: 0, SeqId: 0, ParentSeqId: 0, FirstSeqId: 0, ChunkStart: 0}
+	rootChunk := Chunk{Data: []byte{}, ChunkType: ast.KindDocument, Length: 0, SeqId: 0, ParentSeqId: 0,
+		FirstSeqId: 0, ChunkStart: 0}
 	pc.Node2SeqID()[&rootChunk] = 0
 	p.parseBlocks(root, reader, pc)
 }
@@ -1204,15 +1205,17 @@ func (p *parser) mergeBlocks(from, to int, reader text.Reader, pc Context) {
 		pc.SetLastChunk(nil)
 	}
 	parentSeqId := 0
-	chunk := Chunk{Data: reader.GetRange(resultStart, resultStop), ChunkType: node.Kind(), Length: resultStop - resultStart,
-		SeqId: seqId, ParentSeqId: parentSeqId, FirstSeqId: firstSeqId, ChunkStart: resultStart}
+	chunk := Chunk{Data: reader.GetRange(resultStart, resultStop),
+		ChunkType: node.Kind(), Length: resultStop - resultStart, SeqId: seqId, ParentSeqId: parentSeqId,
+		FirstSeqId: firstSeqId, ChunkStart: resultStart}
 	if ast.IsHeading(node) {
 		level := node.(*ast.Heading).Level
 		parentNode := pc.Level2Node()[level-1]
 		chunk.ParentSeqId = pc.Node2SeqID()[parentNode]
 		pc.Level2Node()[level] = &chunk
 		pc.SetCurrentLevel(level)
-	} else if ast.IsListItem(node) || ast.IsFencedCodeBlock(node) || east.KindTable == node.Kind() || ast.IsParagraph(node) || ast.IsBlockquote(node) || ast.IsList(node) || ast.IsBlockquote(node) {
+	} else if ast.IsListItem(node) || ast.IsFencedCodeBlock(node) || east.KindTable == node.Kind() ||
+		ast.IsParagraph(node) || ast.IsBlockquote(node) || ast.IsList(node) || ast.IsBlockquote(node) {
 		level := pc.CurrentLevel()
 		parentNode := pc.Level2Node()[level]
 		chunk.ParentSeqId = pc.Node2SeqID()[parentNode]
@@ -1277,7 +1280,7 @@ retry:
 		pc.SetBlockOffset(pos)
 		pc.SetBlockIndent(w)
 	}
-	if line == nil || len(line) == 0 || line[0] == '\n' {
+	if len(line) == 0 || line[0] == '\n' {
 		goto continuable
 	}
 	bps = p.freeBlockParsers
