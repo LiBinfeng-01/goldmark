@@ -28,6 +28,7 @@ func NewChunkReader(ctx context.Context, input io.ReaderAt, fileSize int, chunkS
 		chunkSize:  chunkSize,
 		bufferSize: bufferSize,
 		hasInit:    false,
+		chunkChan:  make(chan *parser.Chunk, 0),
 	}
 }
 
@@ -37,7 +38,7 @@ func (c *chunkReader) NextChunk() (*parser.Chunk, error) {
 	}
 	if !c.hasInit {
 		c.hasInit = true
-		reader, _ := text.NewStreamReader(c.input, int64(c.fileSize), c.bufferSize)
+		reader, _ := text.NewStreamReader(c.input, int64(c.fileSize), c.bufferSize, c.chunkSize)
 		root := ast.NewDocument()
 		ctx := parser.NewContextForChunk(parser.Block{Node: root, Parser: nil, Length: 0, Start: 0,
 			Buffer: []byte{}}, c.chunkChan, c.chunkSize)

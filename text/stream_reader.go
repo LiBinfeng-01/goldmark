@@ -21,11 +21,12 @@ type streamReader struct {
 	bufferSize    int
 	bufferOffset  int
 	consumeOffset int
+	chunkSize     int
 	readEOF       bool
 }
 
 // NewReader return a new Reader that can read UTF-8 bytes .
-func NewStreamReader(input io.ReaderAt, fileSize int64, bufferSize int) (Reader, error) {
+func NewStreamReader(input io.ReaderAt, fileSize int64, bufferSize int, chunkSize int) (Reader, error) {
 	buffer := make([]byte, bufferSize)
 	r := &streamReader{
 		fileSize:     int(fileSize),
@@ -33,6 +34,7 @@ func NewStreamReader(input io.ReaderAt, fileSize int64, bufferSize int) (Reader,
 		buffer:       buffer,
 		bufferOffset: 0,
 		bufferSize:   bufferSize,
+		chunkSize:    chunkSize,
 	}
 	r.ResetPosition()
 	return r, nil
@@ -71,7 +73,7 @@ func (r *streamReader) Peek() byte {
 func (r *streamReader) PeekLine() ([]byte, Segment) {
 	if r.pos.Start >= 0 && r.pos.Start < r.fileSize {
 		if r.peekedLine == nil {
-			r.peekedLine = r.buffer[r.pos.Start-r.bufferOffset : r.pos.Stop-r.bufferOffset]
+			r.peekedLine = r.buffer[r.pos.Start-r.bufferOffset : r.pos.Stop-r.bufferOffset-1]
 		}
 		return r.peekedLine, r.pos
 	}
@@ -131,7 +133,7 @@ func (r *streamReader) Advance(n int) {
 			r.pos.Padding--
 			continue
 		}
-		data := r.buffer[r.pos.Start-r.bufferSize]
+		data := r.buffer[r.pos.Start-r.bufferOffset]
 		if data == '\n' {
 			r.AdvanceLine()
 			continue
@@ -195,18 +197,18 @@ func findLastPunctuationIndex(data []byte) int {
 	return -1 // 未找到
 }
 
-func (r *streamReader) punctuationCuttingLine() {
-	idx := findLastPunctuationIndex(r.buffer)
+func (r *streamReader) punctuationCuttingLine(slice []byte) {
+	idx := findLastPunctuationIndex(slice)
 	if idx == -1 {
 		// it may reach the end of the file
-		stopIdx := r.bufferOffset + r.bufferSize
+		stopIdx := r.pos.Start + len(slice) - 1
 		if r.fileSize < stopIdx {
 			r.pos.Stop = r.fileSize
 		} else {
-			r.pos.Stop = stopIdx
+			r.pos.Stop = stopIdx + 1
 		}
 	} else {
-		r.pos.Stop = r.bufferOffset + idx + 1
+		r.pos.Stop = r.pos.Start + idx + 1
 	}
 	r.line++
 }
@@ -218,32 +220,38 @@ func (r *streamReader) AdvanceLine() {
 	r.head = r.pos.Start
 	r.pos.Padding = 0
 
-	if r.pos.Start == 0 && r.bufferOffset == 0 {
+	if r.pos.Start == 0 && r.bufferOffset == 0 || r.pos.Start == r.bufferOffset+r.bufferSize-1 {
 		r.buffer = make([]byte, r.bufferSize)
 		n, err := r.input.ReadAt(r.buffer, int64(r.pos.Start))
+		r.bufferOffset = r.pos.Start
 		if err == io.EOF {
 			r.readEOF = true
 		}
 		r.buffer = r.buffer[:n]
 	}
-	if r.pos.Start-r.bufferOffset > len(r.buffer) {
+	startIdx := r.pos.Start - r.bufferOffset
+	if startIdx > len(r.buffer) {
 		r.pos.Stop = r.fileSize
 		r.line++
 		return
 	}
 
-	idx := bytes.IndexByte(r.buffer[r.pos.Start-r.bufferOffset:], '\n')
+	bufferStopIdx := startIdx + r.chunkSize - 1
+	if bufferStopIdx > len(r.buffer) {
+		bufferStopIdx = len(r.buffer)
+	}
+	idx := bytes.IndexByte(r.buffer[startIdx:bufferStopIdx], '\n')
 	if idx == -1 {
+		// it means the last time it does not consume and go back here directly,
+		// so we need to force it to pop one line, but not moving to the next buffer
+		if len(r.buffer) != r.bufferSize || r.bufferOffset+r.bufferSize-bufferStopIdx > r.chunkSize {
+			r.punctuationCuttingLine(r.buffer[startIdx:bufferStopIdx])
+			return
+		}
 		// if it has reach to the end
 		if r.readEOF {
 			r.pos.Stop = r.fileSize
 			r.line++
-			return
-		}
-		// it means the last time it does not consume and go back here directly,
-		// so we need to force it to pop one line, but not moving to the next buffer
-		if r.consumeOffset == r.bufferOffset {
-			r.punctuationCuttingLine()
 			return
 		}
 		// copy rest of old buffer to nextBuffer
@@ -256,9 +264,14 @@ func (r *streamReader) AdvanceLine() {
 		}
 		r.bufferOffset = r.consumeOffset
 		r.buffer = nextBuffer
-		nextIdx := bytes.IndexByte(r.buffer[r.pos.Start-r.bufferOffset:], '\n')
+		startIdx = r.pos.Start - r.bufferOffset
+		bufferStopIdx = startIdx + r.chunkSize - 1
+		if bufferStopIdx > len(r.buffer) {
+			bufferStopIdx = len(r.buffer)
+		}
+		nextIdx := bytes.IndexByte(r.buffer[startIdx:bufferStopIdx], '\n')
 		if nextIdx == -1 {
-			r.punctuationCuttingLine()
+			r.punctuationCuttingLine(r.buffer[startIdx:bufferStopIdx])
 			return
 		}
 		r.pos.Stop = r.pos.Start + nextIdx + 1
