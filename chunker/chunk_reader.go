@@ -12,7 +12,7 @@ import (
 	"github.com/yuin/goldmark/parser"
 )
 
-type chunkReader struct {
+type ChunkReader struct {
 	input          io.ReaderAt
 	fileSize       int
 	chunkSize      int
@@ -22,8 +22,8 @@ type chunkReader struct {
 	lastChunk      *parser.Chunk
 }
 
-func NewChunkReader(input io.ReaderAt, fileSize int, chunkSize int, bufferSize int) *chunkReader {
-	return &chunkReader{
+func NewChunkReader(input io.ReaderAt, fileSize int, chunkSize int, bufferSize int) *ChunkReader {
+	return &ChunkReader{
 		input:          input,
 		fileSize:       fileSize,
 		chunkSize:      chunkSize,
@@ -35,7 +35,7 @@ func NewChunkReader(input io.ReaderAt, fileSize int, chunkSize int, bufferSize i
 
 var ErrChunkFinishUnexpected = errors.New("chunker finished before it consume all data")
 
-func (c *chunkReader) pushChunksIntoChannel(ctx context.Context) {
+func (c *ChunkReader) pushChunksIntoChannel(ctx context.Context) {
 	reader := text.NewStreamReader(c.input, int64(c.fileSize), c.bufferSize, c.chunkSize)
 	root := ast.NewDocument()
 	ctxForChunk := parser.NewContextForChunk(parser.Block{Node: root, Parser: nil, Length: 0, Start: 0,
@@ -52,7 +52,7 @@ func (c *chunkReader) pushChunksIntoChannel(ctx context.Context) {
 	go markdown.Parser().PushChunks(ctx, reader, parser.WithContext(ctxForChunk))
 }
 
-func (c *chunkReader) NextChunk(ctx context.Context) (*parser.Chunk, error) {
+func (c *ChunkReader) NextChunk(ctx context.Context) (*parser.Chunk, error) {
 	if !c.startPushChunk {
 		c.startPushChunk = true
 		// pushing chunks into channel.
