@@ -1163,6 +1163,7 @@ func (p *parser) mergeBlocks(from, to int, reader text.Reader, pc Context) {
 	if lastChunk != nil && lastChunk.Length+currentLength < pc.SizeLimit() &&
 		lastChunk.ChunkType != ast.KindHeading && !ast.IsHeading(node) && isSameKind(lastChunk.ChunkType, node.Kind()) {
 		lastChunk.Data = reader.GetRange(lastChunk.ChunkStart, resultStop)
+		lastChunk.Length = lastChunk.Length + currentLength
 		return
 	}
 	generateNewChunk(node, resultStart, resultStop, lastChunk, reader, pc)

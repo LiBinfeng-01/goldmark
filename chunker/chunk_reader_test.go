@@ -190,7 +190,7 @@ func TestMarkdownChunker(t *testing.T) {
 			size := info.Size()
 			chunkReader := chunker.NewChunkReader(file, int(size), 20, 4096)
 			expectResult := []parser.Chunk{
-				{Data: []byte("- aaaa\n- bbbb\n"), ChunkType: ast.KindListItem, Length: 7, SeqId: 1, ParentSeqId: 0, FirstSeqId: 1, ChunkStart: 0},
+				{Data: []byte("- aaaa\n- bbbb\n"), ChunkType: ast.KindListItem, Length: 14, SeqId: 1, ParentSeqId: 0, FirstSeqId: 1, ChunkStart: 0},
 				{Data: []byte("- cccccccccc.\n"), ChunkType: ast.KindListItem, Length: 14, SeqId: 2, ParentSeqId: 0, FirstSeqId: 1, ChunkStart: 14},
 				{Data: []byte("- dddddddddd."), ChunkType: ast.KindList, Length: 13, SeqId: 3, ParentSeqId: 0, FirstSeqId: 1, ChunkStart: 28},
 			}
