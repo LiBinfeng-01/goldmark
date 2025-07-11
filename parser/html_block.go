@@ -157,7 +157,8 @@ func (b *htmlBlockParser) Open(parent ast.Node, reader text.Reader, pc Context) 
 	return nil, NoChildren
 }
 
-func (b *htmlBlockParser) Continue(node ast.Node, reader text.Reader, pc Context) State {
+func (b *htmlBlockParser) Continue(block *Block, reader text.Reader, _ Context) State {
+	node := block.Node
 	htmlBlock := node.(*ast.HTMLBlock)
 	lines := htmlBlock.Lines()
 	line, segment := reader.PeekLine()
@@ -167,7 +168,7 @@ func (b *htmlBlockParser) Continue(node ast.Node, reader text.Reader, pc Context
 	case ast.HTMLBlockType1:
 		if lines.Len() == 1 {
 			firstLine := lines.At(0)
-			if htmlBlockType1CloseRegexp.Match(firstLine.Value(reader.Source())) {
+			if htmlBlockType1CloseRegexp.Match(firstLine.Value(reader)) {
 				return Close
 			}
 		}
@@ -196,7 +197,7 @@ func (b *htmlBlockParser) Continue(node ast.Node, reader text.Reader, pc Context
 
 		if lines.Len() == 1 {
 			firstLine := lines.At(0)
-			if bytes.Contains(firstLine.Value(reader.Source()), closurePattern) {
+			if bytes.Contains(firstLine.Value(reader), closurePattern) {
 				return Close
 			}
 		}
@@ -216,7 +217,7 @@ func (b *htmlBlockParser) Continue(node ast.Node, reader text.Reader, pc Context
 	return Continue | NoChildren
 }
 
-func (b *htmlBlockParser) Close(node ast.Node, reader text.Reader, pc Context) {
+func (b *htmlBlockParser) Close(block *Block, reader text.Reader, pc Context) {
 	// nothing to do
 }
 

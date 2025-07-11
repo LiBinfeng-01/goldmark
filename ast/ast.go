@@ -122,15 +122,6 @@ type Node interface {
 	// 2 * level spaces.
 	Dump(source []byte, level int)
 
-	// Text returns text values of this node.
-	// This method is valid only for some inline nodes.
-	// If this node is a block node, Text returns a text value as reasonable as possible.
-	// Notice that there are no 'correct' text values for the block nodes.
-	// Result for the block nodes may be different from your expectation.
-	//
-	// Deprecated: Use other properties of the node to get the text value(i.e. Pragraph.Lines, Text.Value).
-	Text(source []byte) []byte
-
 	// HasBlankPreviousLines returns true if the row before this node is blank,
 	// otherwise false.
 	// This method is valid only for block nodes.
@@ -380,22 +371,6 @@ func (n *BaseNode) OwnerDocument() *Document {
 	return nil
 }
 
-// Text implements Node.Text .
-//
-// Deprecated: Use other properties of the node to get the text value(i.e. Pragraph.Lines, Text.Value).
-func (n *BaseNode) Text(source []byte) []byte {
-	var buf bytes.Buffer
-	for c := n.firstChild; c != nil; c = c.NextSibling() {
-		buf.Write(c.Text(source))
-		if sb, ok := c.(interface {
-			SoftLineBreak() bool
-		}); ok && sb.SoftLineBreak() {
-			buf.WriteByte('\n')
-		}
-	}
-	return buf.Bytes()
-}
-
 // SetAttribute implements Node.SetAttribute.
 func (n *BaseNode) SetAttribute(name []byte, value interface{}) {
 	if n.attributes == nil {
@@ -456,8 +431,8 @@ func DumpHelper(v Node, source []byte, level int, kv map[string]string, cb func(
 	if v.Type() == TypeBlock {
 		fmt.Printf("%sRawText: \"", indent2)
 		for i := 0; i < v.Lines().Len(); i++ {
-			line := v.Lines().At(i)
-			fmt.Printf("%s", line.Value(source))
+			// useless for chunk reader, only for dump
+			fmt.Printf("")
 		}
 		fmt.Printf("\"\n")
 		fmt.Printf("%sHasBlankPreviousLines: %v\n", indent2, v.HasBlankPreviousLines())

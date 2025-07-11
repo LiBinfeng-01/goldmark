@@ -68,7 +68,8 @@ func (b *fencedCodeBlockParser) Open(parent ast.Node, reader text.Reader, pc Con
 
 }
 
-func (b *fencedCodeBlockParser) Continue(node ast.Node, reader text.Reader, pc Context) State {
+func (b *fencedCodeBlockParser) Continue(block *Block, reader text.Reader, pc Context) State {
+	node := block.Node
 	line, segment := reader.PeekLine()
 	fdata := pc.Get(fencedCodeBlockInfoKey).(*fenceData)
 
@@ -83,6 +84,7 @@ func (b *fencedCodeBlockParser) Continue(node ast.Node, reader text.Reader, pc C
 			if line[len(line)-1] != '\n' {
 				newline = 0
 			}
+			block.setLength(block.Length + segment.Len())
 			reader.Advance(segment.Stop - segment.Start - newline + segment.Padding)
 			return Close
 		}
@@ -101,12 +103,32 @@ func (b *fencedCodeBlockParser) Continue(node ast.Node, reader text.Reader, pc C
 		preserveLeadingTabInCodeBlock(&seg, reader, fdata.indent)
 	}
 	seg.ForceNewline = true // EOF as newline
+	if block.Length+segment.Len() > pc.SizeLimit() {
+		openNewBlock(block, segment, seg, pos, padding, reader, pc)
+		return Close
+	}
 	node.Lines().Append(seg)
+	block.setLength(block.Length + seg.Len())
 	reader.AdvanceAndSetPadding(segment.Stop-segment.Start-pos-1, padding)
 	return Continue | NoChildren
 }
 
-func (b *fencedCodeBlockParser) Close(node ast.Node, reader text.Reader, pc Context) {
+func openNewBlock(block *Block, segment text.Segment, seg text.Segment, pos int, padding int, reader text.Reader, pc Context) {
+	node := block.Node
+	// it only can be fenceData and fencedCodeBlock by original logic
+	fdata := pc.Get(fencedCodeBlockInfoKey).(*fenceData)
+	newNode := ast.NewFencedCodeBlock(node.(*ast.FencedCodeBlock).Info)
+
+	fdata.node = newNode
+	node.Parent().AppendChild(node.Parent(), newNode)
+	be := Block{Node: newNode, Parser: block.Parser, Length: segment.Len(), Start: segment.Start, BufferWindow: block.BufferWindow}
+	pc.SetOpenedBlocks(append(pc.OpenedBlocks(), be))
+	newNode.Lines().Append(seg)
+	reader.AdvanceAndSetPadding(segment.Stop-segment.Start-pos-1, padding)
+}
+
+func (b *fencedCodeBlockParser) Close(block *Block, reader text.Reader, pc Context) {
+	node := block.Node
 	fdata := pc.Get(fencedCodeBlockInfoKey).(*fenceData)
 	if fdata.node == node {
 		pc.Set(fencedCodeBlockInfoKey, nil)
