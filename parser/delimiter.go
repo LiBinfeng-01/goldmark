@@ -61,7 +61,7 @@ func (d *Delimiter) Inline() {}
 
 // Dump implements Node.Dump.
 func (d *Delimiter) Dump(source []byte, level int) {
-	fmt.Printf("%sDelimiter: \"%s\"\n", strings.Repeat("    ", level), string(d.Text(source)))
+	fmt.Printf("%sDelimiter: \"%s\"\n", strings.Repeat("    ", level), "")
 }
 
 var kindDelimiter = ast.NewNodeKind("Delimiter")
@@ -69,11 +69,6 @@ var kindDelimiter = ast.NewNodeKind("Delimiter")
 // Kind implements Node.Kind.
 func (d *Delimiter) Kind() ast.NodeKind {
 	return kindDelimiter
-}
-
-// Text implements Node.Text.
-func (d *Delimiter) Text(source []byte) []byte {
-	return d.Segment.Value(source)
 }
 
 // ConsumeCharacters consumes delimiters.

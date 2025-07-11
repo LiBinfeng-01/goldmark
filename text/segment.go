@@ -54,14 +54,14 @@ func NewSegmentPadding(start, stop, n int) Segment {
 }
 
 // Value returns a value of the segment.
-func (t *Segment) Value(buffer []byte) []byte {
+func (t *Segment) Value(reader Reader) []byte {
 	var result []byte
 	if t.Padding == 0 {
-		result = buffer[t.Start:t.Stop]
+		result = reader.GetRange(t.Start, t.Stop)
 	} else {
 		result = make([]byte, 0, t.Padding+t.Stop-t.Start+1)
 		result = append(result, bytes.Repeat(space, t.Padding)...)
-		result = append(result, buffer[t.Start:t.Stop]...)
+		result = append(result, reader.GetRange(t.Start, t.Stop)...)
 	}
 	if t.ForceNewline && len(result) > 0 && result[len(result)-1] != '\n' {
 		result = append(result, '\n')
@@ -93,8 +93,8 @@ func (t *Segment) IsEmpty() bool {
 
 // TrimRightSpace returns a new segment by slicing off all trailing
 // space characters.
-func (t *Segment) TrimRightSpace(buffer []byte) Segment {
-	v := buffer[t.Start:t.Stop]
+func (t *Segment) TrimRightSpace(reader Reader) Segment {
+	v := reader.GetRange(t.Start, t.Stop)
 	l := util.TrimRightSpaceLength(v)
 	if l == len(v) {
 		return NewSegment(t.Start, t.Start)
@@ -104,15 +104,15 @@ func (t *Segment) TrimRightSpace(buffer []byte) Segment {
 
 // TrimLeftSpace returns a new segment by slicing off all leading
 // space characters including padding.
-func (t *Segment) TrimLeftSpace(buffer []byte) Segment {
-	v := buffer[t.Start:t.Stop]
+func (t *Segment) TrimLeftSpace(reader Reader) Segment {
+	v := reader.GetRange(t.Start, t.Stop)
 	l := util.TrimLeftSpaceLength(v)
 	return NewSegment(t.Start+l, t.Stop)
 }
 
 // TrimLeftSpaceWidth returns a new segment by slicing off leading space
 // characters until the given width.
-func (t *Segment) TrimLeftSpaceWidth(width int, buffer []byte) Segment {
+func (t *Segment) TrimLeftSpaceWidth(width int, reader Reader) Segment {
 	padding := t.Padding
 	for ; width > 0; width-- {
 		if padding == 0 {
@@ -123,7 +123,7 @@ func (t *Segment) TrimLeftSpaceWidth(width int, buffer []byte) Segment {
 	if width == 0 {
 		return NewSegmentPadding(t.Start, t.Stop, padding)
 	}
-	text := buffer[t.Start:t.Stop]
+	text := reader.GetRange(t.Start, t.Stop)
 	start := t.Start
 	for _, c := range text {
 		if start >= t.Stop-1 || width <= 0 {
@@ -221,13 +221,4 @@ func (s *Segments) Clear() {
 func (s *Segments) Unshift(v Segment) {
 	s.values = append(s.values[0:1], s.values[0:]...)
 	s.values[0] = v
-}
-
-// Value returns a string value of the collection.
-func (s *Segments) Value(buffer []byte) []byte {
-	var result []byte
-	for _, v := range s.values {
-		result = append(result, v.Value(buffer)...)
-	}
-	return result
 }

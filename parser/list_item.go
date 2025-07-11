@@ -50,7 +50,8 @@ func (b *listItemParser) Open(parent ast.Node, reader text.Reader, pc Context) (
 	return node, HasChildren
 }
 
-func (b *listItemParser) Continue(node ast.Node, reader text.Reader, pc Context) State {
+func (b *listItemParser) Continue(block *Block, reader text.Reader, pc Context) State {
+	node := block.Node
 	line, _ := reader.PeekLine()
 	if util.IsBlank(line) {
 		reader.AdvanceToEOL()
@@ -77,7 +78,7 @@ func (b *listItemParser) Continue(node ast.Node, reader text.Reader, pc Context)
 	return Continue | HasChildren
 }
 
-func (b *listItemParser) Close(node ast.Node, reader text.Reader, pc Context) {
+func (b *listItemParser) Close(block *Block, reader text.Reader, pc Context) {
 	// nothing to do
 }
 

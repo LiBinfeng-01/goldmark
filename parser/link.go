@@ -1,9 +1,6 @@
 package parser
 
 import (
-	"fmt"
-	"strings"
-
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
@@ -34,12 +31,8 @@ func newLinkLabelState(segment text.Segment, isImage bool) *linkLabelState {
 	}
 }
 
-func (s *linkLabelState) Text(source []byte) []byte {
-	return s.Segment.Value(source)
-}
-
 func (s *linkLabelState) Dump(source []byte, level int) {
-	fmt.Printf("%slinkLabelState: \"%s\"\n", strings.Repeat("    ", level), s.Text(source))
+	// useless for chunk reader, only for dump
 }
 
 var kindLinkLabelState = ast.NewNodeKind("LinkLabelState")

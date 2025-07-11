@@ -290,7 +290,7 @@ func (r *Renderer) writeLines(w util.BufWriter, source []byte, n ast.Node) {
 	l := n.Lines().Len()
 	for i := 0; i < l; i++ {
 		line := n.Lines().At(i)
-		r.Writer.RawWrite(w, line.Value(source))
+		r.Writer.RawWrite(w, line.Value(nil))
 	}
 }
 
@@ -380,7 +380,7 @@ func (r *Renderer) renderHTMLBlock(
 			l := n.Lines().Len()
 			for i := 0; i < l; i++ {
 				line := n.Lines().At(i)
-				r.Writer.SecureWrite(w, line.Value(source))
+				r.Writer.SecureWrite(w, line.Value(nil))
 			}
 		} else {
 			_, _ = w.WriteString("<!-- raw HTML omitted -->\n")
@@ -389,7 +389,7 @@ func (r *Renderer) renderHTMLBlock(
 		if n.HasClosure() {
 			if r.Unsafe {
 				closure := n.ClosureLine
-				r.Writer.SecureWrite(w, closure.Value(source))
+				r.Writer.SecureWrite(w, closure.Value(nil))
 			} else {
 				_, _ = w.WriteString("<!-- raw HTML omitted -->\n")
 			}
@@ -538,7 +538,7 @@ func (r *Renderer) renderCodeSpan(w util.BufWriter, source []byte, n ast.Node, e
 		}
 		for c := n.FirstChild(); c != nil; c = c.NextSibling() {
 			segment := c.(*ast.Text).Segment
-			value := segment.Value(source)
+			value := segment.Value(nil)
 			if bytes.HasSuffix(value, []byte("\n")) {
 				r.Writer.RawWrite(w, value[:len(value)-1])
 				r.Writer.RawWrite(w, []byte(" "))
@@ -641,7 +641,7 @@ func (r *Renderer) renderRawHTML(
 		l := n.Segments.Len()
 		for i := 0; i < l; i++ {
 			segment := n.Segments.At(i)
-			_, _ = w.Write(segment.Value(source))
+			_, _ = w.Write(segment.Value(nil))
 		}
 		return ast.WalkSkipChildren, nil
 	}
@@ -656,9 +656,9 @@ func (r *Renderer) renderText(w util.BufWriter, source []byte, node ast.Node, en
 	n := node.(*ast.Text)
 	segment := n.Segment
 	if n.IsRaw() {
-		r.Writer.RawWrite(w, segment.Value(source))
+		r.Writer.RawWrite(w, segment.Value(nil))
 	} else {
-		value := segment.Value(source)
+		value := segment.Value(nil)
 		r.Writer.Write(w, value)
 		if n.HardLineBreak() || (n.SoftLineBreak() && r.HardWraps) {
 			if r.XHTML {

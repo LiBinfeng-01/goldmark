@@ -71,7 +71,7 @@ func (b *footnoteBlockParser) Open(parent gast.Node, reader text.Reader, pc pars
 	return item, parser.HasChildren
 }
 
-func (b *footnoteBlockParser) Continue(node gast.Node, reader text.Reader, pc parser.Context) parser.State {
+func (b *footnoteBlockParser) Continue(block *parser.Block, reader text.Reader, pc parser.Context) parser.State {
 	line, _ := reader.PeekLine()
 	if util.IsBlank(line) {
 		return parser.Continue | parser.HasChildren
@@ -84,7 +84,8 @@ func (b *footnoteBlockParser) Continue(node gast.Node, reader text.Reader, pc pa
 	return parser.Continue | parser.HasChildren
 }
 
-func (b *footnoteBlockParser) Close(node gast.Node, reader text.Reader, pc parser.Context) {
+func (b *footnoteBlockParser) Close(block *parser.Block, reader text.Reader, pc parser.Context) {
+	node := block.Node
 	var list *ast.FootnoteList
 	if tlist := pc.Get(footnoteListKey); tlist != nil {
 		list = tlist.(*ast.FootnoteList)

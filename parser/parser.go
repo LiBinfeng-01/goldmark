@@ -2,11 +2,13 @@
 package parser
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
 
 	"github.com/yuin/goldmark/ast"
+	east "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
 )
@@ -60,6 +62,8 @@ type IDs interface {
 
 	// Put puts a given element id to the used ids table.
 	Put(value []byte)
+
+	GenerateIntID() int
 }
 
 type ids struct {
@@ -115,6 +119,10 @@ func (s *ids) Generate(value []byte, kind ast.NodeKind) []byte {
 
 func (s *ids) Put(value []byte) {
 	s.values[util.BytesToReadOnlyString(value)] = true
+}
+
+func (s *ids) GenerateIntID() int {
+	return -1
 }
 
 // ContextKey is a key that is used to set arbitrary values to the context.
@@ -202,6 +210,51 @@ type Context interface {
 
 	// IsInLinkLabel returns true if current position seems to be in link label.
 	IsInLinkLabel() bool
+
+	// ChunkToSeqID keeps the relationship between chunk and its seqId.
+	ChunkToSeqID() map[*Chunk]int
+
+	// LevelToChunk keeps the relationship between chunk and its level decided by heading.
+	LevelToChunk() map[int]*Chunk
+
+	// Root normally is ast.Document.
+	Root() Block
+
+	// SetRoot used to set root block.
+	SetRoot(root Block)
+
+	// SizeLimit it means chunk size limit.
+	SizeLimit() int
+
+	// CurrentLevel used to mark current level decided by heading.
+	CurrentLevel() int
+
+	// SetCurrentLevel used to set current level.
+	SetCurrentLevel(level int)
+
+	// PushToChannel used to push pointer to chunk to channel.
+	PushToChannel(chunk *Chunk)
+
+	// CloseChannel close channel, may call by user stopping or consume finish of all data.
+	CloseChannel()
+
+	// TranslateBlock used to translate blocks in paragraph to table and note the node.
+	TranslateBlock() *Block
+
+	// SetTranslateBlock used to set translate block.
+	SetTranslateBlock(block *Block)
+
+	// LastChunk means last opened chunk and not pushed to channel yet.
+	LastChunk() *Chunk
+
+	// SetLastChunk used to set last chunk.
+	SetLastChunk(chunk *Chunk)
+
+	// LastTable used to save last table, we need its header to transform next table raws.
+	LastTable() (int, *east.Table)
+
+	// SetLastTable used to set last table.
+	SetLastTable(stop int, table *east.Table)
 }
 
 // A ContextConfig struct is a data structure that holds configuration of the Context.
@@ -220,14 +273,24 @@ func WithIDs(ids IDs) ContextOption {
 }
 
 type parseContext struct {
-	store         []interface{}
-	ids           IDs
-	refs          map[string]Reference
-	blockOffset   int
-	blockIndent   int
-	delimiters    *Delimiter
-	lastDelimiter *Delimiter
-	openedBlocks  []Block
+	store          []interface{}
+	ids            IDs
+	refs           map[string]Reference
+	blockOffset    int
+	blockIndent    int
+	delimiters     *Delimiter
+	lastDelimiter  *Delimiter
+	openedBlocks   []Block
+	nodeToSeqID    map[*Chunk]int
+	levelToNode    map[int]*Chunk
+	root           Block
+	sizeLimit      int
+	currentLevel   int
+	chunkChan      chan *Chunk
+	translateBlock *Block
+	lastChunk      *Chunk
+	lastTable      *east.Table
+	lastTableStop  int
 }
 
 // NewContext returns a new Context.
@@ -249,6 +312,110 @@ func NewContext(options ...ContextOption) Context {
 		lastDelimiter: nil,
 		openedBlocks:  []Block{},
 	}
+}
+
+type seqIDs struct {
+	seqId int
+}
+
+func newSeqIDs() IDs {
+	return &seqIDs{seqId: 0}
+}
+
+func (s *seqIDs) Generate(_ []byte, _ ast.NodeKind) []byte {
+	return nil
+}
+
+func (s *seqIDs) Put(value []byte) {}
+
+func (s *seqIDs) GenerateIntID() int {
+	s.seqId++
+	return s.seqId
+}
+
+// NewContextForChunk returns a new Context.
+func NewContextForChunk(root Block, chunkChan chan *Chunk, sizeLimit int, options ...ContextOption) Context {
+	cfg := &ContextConfig{IDs: newSeqIDs()}
+	for _, option := range options {
+		option(cfg)
+	}
+
+	return &parseContext{
+		store:         make([]any, ContextKeyMax+1),
+		refs:          map[string]Reference{},
+		ids:           cfg.IDs,
+		blockOffset:   -1,
+		blockIndent:   -1,
+		delimiters:    nil,
+		lastDelimiter: nil,
+		openedBlocks:  []Block{},
+		nodeToSeqID:   make(map[*Chunk]int),
+		levelToNode:   make(map[int]*Chunk),
+		root:          root,
+		sizeLimit:     sizeLimit,
+		chunkChan:     chunkChan,
+	}
+}
+
+func (p *parseContext) Root() Block {
+	return p.root
+}
+
+func (p *parseContext) SetRoot(root Block) {
+	p.root = root
+}
+
+func (p *parseContext) CurrentLevel() int {
+	return p.currentLevel
+}
+
+func (p *parseContext) SetCurrentLevel(level int) {
+	p.currentLevel = level
+}
+
+func (p *parseContext) PushToChannel(chunk *Chunk) {
+	p.chunkChan <- chunk
+}
+
+func (p *parseContext) CloseChannel() {
+	close(p.chunkChan)
+}
+
+func (p *parseContext) TranslateBlock() *Block {
+	return p.translateBlock
+}
+
+func (p *parseContext) SetTranslateBlock(block *Block) {
+	p.translateBlock = block
+}
+
+func (p *parseContext) LastChunk() *Chunk {
+	return p.lastChunk
+}
+
+func (p *parseContext) SetLastChunk(chunk *Chunk) {
+	p.lastChunk = chunk
+}
+
+func (p *parseContext) LastTable() (int, *east.Table) {
+	return p.lastTableStop, p.lastTable
+}
+
+func (p *parseContext) SetLastTable(stop int, table *east.Table) {
+	p.lastTable = table
+	p.lastTableStop = stop
+}
+
+func (p *parseContext) ChunkToSeqID() map[*Chunk]int {
+	return p.nodeToSeqID
+}
+
+func (p *parseContext) LevelToChunk() map[int]*Chunk {
+	return p.levelToNode
+}
+
+func (p *parseContext) SizeLimit() int {
+	return p.sizeLimit
 }
 
 func (p *parseContext) Get(key ContextKey) interface{} {
@@ -475,6 +642,12 @@ type Parser interface {
 
 	// AddOption adds the given option to this parser.
 	AddOptions(...Option)
+
+	// Parse parses the given Markdown text into AST nodes.
+	InitParser()
+
+	// get block by line, cache by block stack
+	PushChunks(ctx context.Context, reader text.Reader, opts ...ParseOption)
 }
 
 // A SetOptioner interface sets the given option to the object.
@@ -514,10 +687,10 @@ type BlockParser interface {
 	// returns Close. If Continue has been able to parse the current line,
 	// Continue should returns (Continue | NoChildren) or
 	// (Continue | HasChildren)
-	Continue(node ast.Node, reader text.Reader, pc Context) State
+	Continue(block *Block, reader text.Reader, pc Context) State
 
 	// Close will be called when the parser returns Close.
-	Close(node ast.Node, reader text.Reader, pc Context)
+	Close(block *Block, reader text.Reader, pc Context)
 
 	// CanInterruptParagraph returns true if the parser can interrupt paragraphs,
 	// otherwise false.
@@ -621,12 +794,29 @@ func DefaultParagraphTransformers() []util.PrioritizedValue {
 	}
 }
 
+type Chunk struct {
+	Data        []byte
+	ChunkType   ast.NodeKind
+	Length      int
+	SeqId       int
+	ParentSeqId int
+	FirstSeqId  int
+	ChunkStart  int
+}
+
 // A Block struct holds a node and correspond parser pair.
 type Block struct {
 	// Node is a BlockNode.
 	Node ast.Node
 	// Parser is a BlockParser.
-	Parser BlockParser
+	Parser       BlockParser
+	Length       int
+	Start        int
+	BufferWindow *text.BufferWindow
+}
+
+func (b *Block) setLength(length int) {
+	b.Length = length
 }
 
 type parser struct {
@@ -640,6 +830,7 @@ type parser struct {
 	escapedSpace          bool
 	config                *Config
 	initSync              sync.Once
+	parent                ast.Node
 }
 
 type withBlockParsers struct {
@@ -735,6 +926,7 @@ func NewParser(options ...Option) Parser {
 	p := &parser{
 		options: map[OptionName]interface{}{},
 		config:  config,
+		parent:  ast.NewDocument(),
 	}
 
 	return p
@@ -873,7 +1065,7 @@ func (p *parser) Parse(reader text.Reader, opts ...ParseOption) ast.Node {
 	}
 	pc := c.Context
 	root := ast.NewDocument()
-	p.parseBlocks(root, reader, pc)
+	p.parseBlocks(context.TODO(), root, reader, pc)
 
 	blockReader := text.NewBlockReader(reader.Source(), nil)
 	p.walkBlock(root, func(node ast.Node) {
@@ -887,8 +1079,52 @@ func (p *parser) Parse(reader text.Reader, opts ...ParseOption) ast.Node {
 	return root
 }
 
-func (p *parser) transformParagraph(node *ast.Paragraph, reader text.Reader, pc Context) bool {
+func (p *parser) InitParser() {
+	// copy from Parse()
+	p.initSync.Do(func() {
+		p.config.BlockParsers.Sort()
+		for _, v := range p.config.BlockParsers {
+			p.addBlockParser(v, p.config.Options)
+		}
+		for i := range p.blockParsers {
+			if p.blockParsers[i] != nil {
+				p.blockParsers[i] = append(p.blockParsers[i], p.freeBlockParsers...)
+			}
+		}
+
+		p.config.InlineParsers.Sort()
+		for _, v := range p.config.InlineParsers {
+			p.addInlineParser(v, p.config.Options)
+		}
+		p.config.ParagraphTransformers.Sort()
+		for _, v := range p.config.ParagraphTransformers {
+			p.addParagraphTransformer(v, p.config.Options)
+		}
+		p.config.ASTTransformers.Sort()
+		for _, v := range p.config.ASTTransformers {
+			p.addASTTransformer(v, p.config.Options)
+		}
+		p.escapedSpace = p.config.EscapedSpace
+		p.config = nil
+	})
+}
+
+func (p *parser) PushChunks(ctx context.Context, reader text.Reader, opts ...ParseOption) {
+	c := &ParseConfig{}
+	for _, opt := range opts {
+		opt(c)
+	}
+	pc := c.Context
+	root := pc.Root().Node
+	rootChunk := Chunk{Data: []byte{}, ChunkType: ast.KindDocument, Length: 0, SeqId: 0, ParentSeqId: 0,
+		FirstSeqId: 0, ChunkStart: 0}
+	pc.ChunkToSeqID()[&rootChunk] = 0
+	p.parseBlocks(ctx, root, reader, pc)
+}
+
+func (p *parser) transformParagraph(node *ast.Paragraph, reader text.Reader, block *Block, pc Context) bool {
 	for _, pt := range p.paragraphTransformers {
+		pc.SetTranslateBlock(block)
 		pt.Transform(node, reader, pc)
 		if node.Parent() == nil {
 			return true
@@ -897,17 +1133,110 @@ func (p *parser) transformParagraph(node *ast.Paragraph, reader text.Reader, pc 
 	return false
 }
 
+func isSameKind(a, b ast.NodeKind) bool {
+	if a == b {
+		return true
+	}
+	if (a == ast.KindList && b == ast.KindListItem) || (a == ast.KindListItem && b == ast.KindList) {
+		return true
+	}
+	return false
+}
+
+// from is the larger side of pc.OpenedBlocks(), it often means child and to often means parent.
+func (p *parser) mergeBlocks(from, to int, reader text.Reader, pc Context) {
+	blocks := pc.OpenedBlocks()
+	if from < 0 || to < 0 {
+		return
+	}
+
+	resultStop := findResultStop(blocks, from, to)
+	resultStart := reader.ConsumeOffset()
+	if resultStop < resultStart {
+		return
+	}
+	reader.SetConsumeOffset(resultStop)
+	currentLength := resultStop - resultStart
+
+	node := blocks[to].Node
+	lastChunk := pc.LastChunk()
+	if lastChunk != nil && lastChunk.Length+currentLength < pc.SizeLimit() &&
+		lastChunk.ChunkType != ast.KindHeading && !ast.IsHeading(node) && isSameKind(lastChunk.ChunkType, node.Kind()) {
+		lastChunk.Data = reader.GetRange(lastChunk.ChunkStart, resultStop)
+		return
+	}
+	generateNewChunk(node, resultStart, resultStop, lastChunk, reader, pc)
+}
+
+func findResultStop(blocks []Block, from, to int) int {
+	// find the smallest start and largest stop index of all blocks
+	resultStop := blocks[from].Start + blocks[from].Length
+	for i := from - 1; i >= to; i-- {
+		stop := blocks[i].Start + blocks[i].Length
+		if stop > resultStop {
+			resultStop = stop
+		}
+	}
+	return resultStop
+}
+
+func generateNewChunk(node ast.Node, start, stop int, lastChunk *Chunk, reader text.Reader, pc Context) {
+	// combine them together and generate id for chunk, get one block as the represent of chunk
+	seqId := pc.IDs().GenerateIntID()
+	firstSeqId := 0
+	lastSeqId := seqId - 1
+	if lastChunk != nil && isSameKind(lastChunk.ChunkType, node.Kind()) && lastChunk.SeqId == lastSeqId {
+		if lastChunk.FirstSeqId == 0 {
+			lastChunk.FirstSeqId = lastChunk.SeqId
+		}
+		firstSeqId = lastChunk.FirstSeqId
+	}
+	if lastChunk != nil {
+		pc.PushToChannel(lastChunk)
+		pc.SetLastChunk(nil)
+		reader.ReleaseHistoryWindow(lastChunk.ChunkStart + lastChunk.Length)
+	}
+	parentSeqId := 0
+	chunk := Chunk{Data: reader.GetRange(start, stop),
+		ChunkType: node.Kind(), Length: stop - start, SeqId: seqId, ParentSeqId: parentSeqId,
+		FirstSeqId: firstSeqId, ChunkStart: start}
+	if heading, ok := node.(*ast.Heading); ok {
+		level := heading.Level
+		parentNode := pc.LevelToChunk()[level-1]
+		chunk.ParentSeqId = pc.ChunkToSeqID()[parentNode]
+		pc.LevelToChunk()[level] = &chunk
+		pc.SetCurrentLevel(level)
+	} else if ast.IsListItem(node) || ast.IsFencedCodeBlock(node) || east.KindTable == node.Kind() ||
+		ast.IsParagraph(node) || ast.IsBlockquote(node) || ast.IsList(node) || ast.IsBlockquote(node) {
+		level := pc.CurrentLevel()
+		parentNode := pc.LevelToChunk()[level]
+		chunk.ParentSeqId = pc.ChunkToSeqID()[parentNode]
+	}
+	pc.ChunkToSeqID()[&chunk] = seqId
+	pc.SetLastChunk(&chunk)
+}
+
 func (p *parser) closeBlocks(from, to int, reader text.Reader, pc Context) {
 	blocks := pc.OpenedBlocks()
 	for i := from; i >= to; i-- {
 		node := blocks[i].Node
 		paragraph, ok := node.(*ast.Paragraph)
 		if ok && node.Parent() != nil {
-			p.transformParagraph(paragraph, reader, pc)
+			p.transformParagraph(paragraph, reader, &blocks[i], pc)
 		}
 		if node.Parent() != nil { // closes only if node has not been transformed
-			blocks[i].Parser.Close(blocks[i].Node, reader, pc)
+			blocks[i].Parser.Close(&blocks[i], reader, pc)
 		}
+	}
+	p.mergeBlocks(from, to, reader, pc)
+	if reader.HasAllConsumed() {
+		lastChunk := pc.LastChunk()
+		if lastChunk != nil {
+			pc.PushToChannel(lastChunk)
+			pc.SetLastChunk(nil)
+			reader.ReleaseHistoryWindow(lastChunk.ChunkStart + lastChunk.Length)
+		}
+		pc.CloseChannel()
 	}
 	if from == len(blocks)-1 {
 		blocks = blocks[0:to]
@@ -934,7 +1263,7 @@ func (p *parser) openBlocks(parent ast.Node, blankLine bool, reader text.Reader,
 	}
 retry:
 	var bps []BlockParser
-	line, _ := reader.PeekLine()
+	line, seg := reader.PeekLine()
 	w, pos := util.IndentWidth(line, reader.LineOffset())
 	if w >= len(line) {
 		pc.SetBlockOffset(-1)
@@ -943,7 +1272,7 @@ retry:
 		pc.SetBlockOffset(pos)
 		pc.SetBlockIndent(w)
 	}
-	if line == nil || line[0] == '\n' {
+	if len(line) == 0 || line[0] == '\n' {
 		goto continuable
 	}
 	bps = p.freeBlockParsers
@@ -985,10 +1314,10 @@ retry:
 				if last == parent.LastChild() {
 					// Opened paragraph may be transformed by ParagraphTransformers in
 					// closeBlocks().
-					lastBlock.Parser.Close(last, reader, pc)
+					lastBlock.Parser.Close(&lastBlock, reader, pc)
 					blocks := pc.OpenedBlocks()
 					pc.SetOpenedBlocks(blocks[0 : len(blocks)-1])
-					if p.transformParagraph(last.(*ast.Paragraph), reader, pc) {
+					if p.transformParagraph(last.(*ast.Paragraph), reader, &lastBlock, pc) {
 						// Paragraph has been transformed.
 						// So this parser is considered as failing.
 						continuable = false
@@ -1003,7 +1332,7 @@ retry:
 			}
 			parent.AppendChild(parent, node)
 			result = newBlocksOpened
-			be := Block{node, bp}
+			be := Block{Node: node, Parser: bp, Length: seg.Len(), Start: seg.Start, BufferWindow: reader.BufferWindow()}
 			pc.SetOpenedBlocks(append(pc.OpenedBlocks(), be))
 			if state&HasChildren != 0 {
 				parent = node
@@ -1015,7 +1344,8 @@ retry:
 
 continuable:
 	if result == noBlocksOpened && continuable {
-		state := lastBlock.Parser.Continue(lastBlock.Node, reader, pc)
+		openedBlocks := pc.OpenedBlocks()
+		state := lastBlock.Parser.Continue(&openedBlocks[len(openedBlocks)-1], reader, pc)
 		if state&Continue != 0 {
 			result = paragraphContinuation
 		}
@@ -1045,72 +1375,84 @@ func isBlankLine(lineNum, level int, stats []lineStat) bool {
 	return false
 }
 
-func (p *parser) parseBlocks(parent ast.Node, reader text.Reader, pc Context) {
+func (p *parser) parseBlocks(ctx context.Context, parent ast.Node, reader text.Reader, pc Context) {
 	pc.SetOpenedBlocks(nil)
 	blankLines := make([]lineStat, 0, 128)
-	for { // process blocks separated by blank lines
-		_, _, ok := reader.SkipBlankLines()
-		if !ok {
-			return
-		}
-		// first, we try to open blocks
-		if p.openBlocks(parent, true, reader, pc) != newBlocksOpened {
-			return
-		}
-		reader.AdvanceLine()
-		blankLines = blankLines[0:0]
-		for { // process opened blocks line by line
-			openedBlocks := pc.OpenedBlocks()
-			l := len(openedBlocks)
-			if l == 0 {
-				break
+	for {
+		select {
+		case <-ctx.Done(): // 收到中断信号
+			fmt.Println("go func been canceled")
+			return // 退出协程
+		default:
+			// process blocks separated by blank lines.
+			_, _, ok := reader.SkipBlankLines()
+			if !ok {
+				pc.CloseChannel()
+				return
 			}
-			lastIndex := l - 1
-			for i := 0; i < l; i++ {
-				be := openedBlocks[i]
-				line, _ := reader.PeekLine()
-				if line == nil {
-					p.closeBlocks(lastIndex, 0, reader, pc)
-					reader.AdvanceLine()
-					return
-				}
-				lineNum, _ := reader.Position()
-				blankLines = append(blankLines, lineStat{lineNum, i, util.IsBlank(line)})
-				// If node is a paragraph, p.openBlocks determines whether it is continuable.
-				// So we do not process paragraphs here.
-				if !ast.IsParagraph(be.Node) {
-					state := be.Parser.Continue(be.Node, reader, pc)
-					if state&Continue != 0 {
-						// When current node is a container block and has no children,
-						// we try to open new child nodes
-						if state&HasChildren != 0 && i == lastIndex {
-							isBlank := isBlankLine(lineNum-1, i+1, blankLines)
-							p.openBlocks(be.Node, isBlank, reader, pc)
-							break
-						}
-						continue
-					}
-				}
-				// current node may be closed or lazy continuation
-				isBlank := isBlankLine(lineNum-1, i, blankLines)
-				thisParent := parent
-				if i != 0 {
-					thisParent = openedBlocks[i-1].Node
-				}
-				lastNode := openedBlocks[lastIndex].Node
-				result := p.openBlocks(thisParent, isBlank, reader, pc)
-				if result != paragraphContinuation {
-					// lastNode is a paragraph and was transformed by the paragraph
-					// transformers.
-					if openedBlocks[lastIndex].Node != lastNode {
-						lastIndex--
-					}
-					p.closeBlocks(lastIndex, i, reader, pc)
-				}
-				break
+			// first, we try to open blocks
+			if p.openBlocks(parent, true, reader, pc) != newBlocksOpened {
+				return
 			}
-
 			reader.AdvanceLine()
+			blankLines = blankLines[0:0]
+			for { // process opened blocks line by line
+				openedBlocks := pc.OpenedBlocks()
+				l := len(openedBlocks)
+				if l == 0 {
+					break
+				}
+				lastIndex := l - 1
+				for i := 0; i < l; i++ {
+					be := openedBlocks[i]
+					line, _ := reader.PeekLine()
+					if line == nil {
+						p.closeBlocks(lastIndex, 0, reader, pc)
+						reader.AdvanceLine()
+						return
+					}
+					lineNum, _ := reader.Position()
+					blankLines = append(blankLines, lineStat{lineNum, i, util.IsBlank(line)})
+					// If node is a paragraph, p.openBlocks determines whether it is continuable.
+					// So we do not process paragraphs here.
+					if !ast.IsParagraph(be.Node) {
+						state := be.Parser.Continue(&openedBlocks[i], reader, pc)
+						if state&Continue != 0 {
+							// When current node is a container block and has no children,
+							// we try to open new child nodes
+							if state&HasChildren != 0 && i == lastIndex {
+								isBlank := isBlankLine(lineNum-1, i+1, blankLines)
+								p.openBlocks(be.Node, isBlank, reader, pc)
+								break
+							}
+							if state&Close != 0 && i == lastIndex {
+								p.closeBlocks(lastIndex, i, reader, pc)
+								break
+							}
+							continue
+						}
+					}
+					// current node may be closed or lazy continuation
+					isBlank := isBlankLine(lineNum-1, i, blankLines)
+					thisParent := parent
+					if i != 0 {
+						thisParent = openedBlocks[i-1].Node
+					}
+					lastNode := openedBlocks[lastIndex].Node
+					result := p.openBlocks(thisParent, isBlank, reader, pc)
+					if result != paragraphContinuation {
+						// lastNode is a paragraph and was transformed by the paragraph
+						// transformers.
+						if openedBlocks[lastIndex].Node != lastNode {
+							lastIndex--
+						}
+						p.closeBlocks(lastIndex, i, reader, pc)
+					}
+					break
+				}
+
+				reader.AdvanceLine()
+			}
 		}
 	}
 }
@@ -1133,7 +1475,6 @@ func (p *parser) parseBlock(block text.BlockReader, parent ast.Node, pc Context)
 		return
 	}
 	escaped := false
-	source := block.Source()
 	block.Reset(parent.Lines())
 	for {
 	retry:
@@ -1233,7 +1574,7 @@ func (p *parser) parseBlock(block text.BlockReader, parent ast.Node, pc Context)
 		if lineBreakFlags&(lineBreakHard|lineBreakVisible) == lineBreakHard|lineBreakVisible {
 			text = ast.NewTextSegment(diff)
 		} else {
-			text = ast.NewTextSegment(diff.TrimRightSpace(source))
+			text = ast.NewTextSegment(diff.TrimRightSpace(block))
 		}
 		text.SetSoftLineBreak(lineBreakFlags&lineBreakSoft != 0)
 		text.SetHardLineBreak(lineBreakFlags&lineBreakHard != 0)

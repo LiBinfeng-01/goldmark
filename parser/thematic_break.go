@@ -58,11 +58,11 @@ func (b *thematicBreakPraser) Open(parent ast.Node, reader text.Reader, pc Conte
 	return nil, NoChildren
 }
 
-func (b *thematicBreakPraser) Continue(node ast.Node, reader text.Reader, pc Context) State {
+func (b *thematicBreakPraser) Continue(block *Block, reader text.Reader, pc Context) State {
 	return Close
 }
 
-func (b *thematicBreakPraser) Close(node ast.Node, reader text.Reader, pc Context) {
+func (b *thematicBreakPraser) Close(block *Block, reader text.Reader, pc Context) {
 	// nothing to do
 }
 

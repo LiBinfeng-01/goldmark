@@ -76,6 +76,11 @@ func TestWindowsNewLine(t *testing.T) {
 type myIDs struct {
 }
 
+func (s *myIDs) GenerateIntID() int {
+	// never use it.
+	return 0
+}
+
 func (s *myIDs) Generate(value []byte, kind ast.NodeKind) []byte {
 	return []byte("my-id")
 }

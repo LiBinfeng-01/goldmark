@@ -142,17 +142,11 @@ func (n *Text) Merge(node Node, source []byte) bool {
 	return true
 }
 
-// Text implements Node.Text.
-//
-// Deprecated: Use other properties of the node to get the text value(i.e. Text.Value).
-func (n *Text) Text(source []byte) []byte {
-	return n.Segment.Value(source)
-}
-
 // Value returns a value of this node.
 // SoftLineBreaks are not included in the returned value.
 func (n *Text) Value(source []byte) []byte {
-	return n.Segment.Value(source)
+	// useless for chunk reader, only for dump
+	return []byte{}
 }
 
 // Dump implements Node.Dump.
@@ -265,13 +259,6 @@ func (n *String) SetCode(v bool) {
 	}
 }
 
-// Text implements Node.Text.
-//
-// Deprecated: Use other properties of the node to get the text value(i.e. String.Value).
-func (n *String) Text(source []byte) []byte {
-	return n.Value
-}
-
 // Dump implements Node.Dump.
 func (n *String) Dump(source []byte, level int) {
 	fs := textFlagsString(n.flags)
@@ -306,10 +293,10 @@ func (n *CodeSpan) Inline() {
 }
 
 // IsBlank returns true if this node consists of spaces, otherwise false.
-func (n *CodeSpan) IsBlank(source []byte) bool {
+func (n *CodeSpan) IsBlank(reader textm.Reader) bool {
 	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
 		text := c.(*Text).Segment
-		if !util.IsBlank(text.Value(source)) {
+		if !util.IsBlank(text.Value(reader)) {
 			return false
 		}
 	}
@@ -480,9 +467,8 @@ func (n *AutoLink) Inline() {}
 
 // Dump implements Node.Dump.
 func (n *AutoLink) Dump(source []byte, level int) {
-	segment := n.value.Segment
 	m := map[string]string{
-		"Value": string(segment.Value(source)),
+		"Value": "",
 	}
 	DumpHelper(n, source, level, m, nil)
 }
@@ -513,13 +499,6 @@ func (n *AutoLink) Label(source []byte) []byte {
 	return n.value.Value(source)
 }
 
-// Text implements Node.Text.
-//
-// Deprecated: Use other properties of the node to get the text value(i.e. AutoLink.Label).
-func (n *AutoLink) Text(source []byte) []byte {
-	return n.value.Value(source)
-}
-
 // NewAutoLink returns a new AutoLink node.
 func NewAutoLink(typ AutoLinkType, value *Text) *AutoLink {
 	return &AutoLink{
@@ -543,8 +522,7 @@ func (n *RawHTML) Dump(source []byte, level int) {
 	m := map[string]string{}
 	t := []string{}
 	for i := 0; i < n.Segments.Len(); i++ {
-		segment := n.Segments.At(i)
-		t = append(t, string(segment.Value(source)))
+		t = append(t, "")
 	}
 	m["RawText"] = strings.Join(t, "")
 	DumpHelper(n, source, level, m, nil)
@@ -556,13 +534,6 @@ var KindRawHTML = NewNodeKind("RawHTML")
 // Kind implements Node.Kind.
 func (n *RawHTML) Kind() NodeKind {
 	return KindRawHTML
-}
-
-// Text implements Node.Text.
-//
-// Deprecated: Use other properties of the node to get the text value(i.e. RawHTML.Segments).
-func (n *RawHTML) Text(source []byte) []byte {
-	return n.Segments.Value(source)
 }
 
 // NewRawHTML returns a new RawHTML node.
