@@ -1,0 +1,35 @@
+sequenceDiagram
+    actor User
+    participant Frontend
+    participant YashanKnowsServer
+    participant FileService
+    participant DocumentService
+    participant Redis
+    participant TaskManager
+    participant ObjectStorage as Object Storage
+    participant DocumentStore as Document Store
+    participant Molian
+
+    User->>Frontend: 1. Upload File (file, kb_id)
+    Frontend->>YashanKnowsServer: 2. POST /v1/document/upload (file, kb_id)
+    YashanKnowsServer->>FileService: 3. upload_document(file, kb_id)
+    FileService->>ObjectStorage: 3.1. Store File
+    FileService->>DocumentService: 3.2. insert(document_metadata)
+    DocumentService-->>YashanKnowsServer: Document Record Created
+    YashanKnowsServer-->>Frontend: 4. Upload Success Response
+    Frontend->>User: File Uploaded (UI Update)
+	YashanKnowsServer-->>TaskManager: 5. Create Doc Process Task (ctx, DocId, config)
+	TaskManager-->>TaskManager: 6.Handle Doc Process Task(TaskId)
+	TaskManager-->>FileService: 6.1.Get Original File
+    FileService->>TaskManager: 6.1.Return Original File Binary ReadAt
+    TaskManager-->>Molian: 6.2. Convert Document(ctx, io.ReaderAt, io.Writer)
+    Molian->>Molian: 6.2. Convert Document And Save To DocumentStore
+    TaskManager-->>Molian: 6.3. Chunking Document(io.ReaderAt, fileSize, chunkSize, bufferSize)
+	Molian->>TaskManager: 6.3. Chunk
+	TaskManager-->>DocumentStore: 6.3. Store Chunks
+	TaskManager->>Molian: 6.4. Embedding(text)
+	Molian->>TaskManager: 6.4. Embeddings
+	TaskManager-->>DocumentStore: 6.5. Indexing(Chunks,Embeddings)
+	TaskManager->YashanKnowsServer: 6.Doc Process Task Done
+
+https://www.processon.com/mermaid
